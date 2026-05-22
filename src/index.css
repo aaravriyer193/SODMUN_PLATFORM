@@ -1,160 +1,228 @@
-@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&display=swap');
+
+/* ============================================
+   SODMUN DESIGN SYSTEM — LIGHT GLASSMORPHISM
+   ============================================ */
 
 :root {
-  --bg-main: #050505;
-  --bg-card: #121212;
-  --bg-input: #1a1a1a;
-  --accent: #FF8C00;
-  --text-primary: #ffffff;
-  --text-secondary: #a0a0a0;
-  --border: #252525;
-  --radius-lg: 24px;
-  --radius-md: 16px;
+  /* Core palette */
+  --bg-base:        #F5F3EF;
+  --bg-surface:     rgba(255, 255, 255, 0.72);
+  --bg-elevated:    rgba(255, 255, 255, 0.92);
+  --bg-input:       rgba(255, 255, 255, 0.85);
+  --bg-overlay:     rgba(245, 243, 239, 0.95);
+
+  /* Orange accent */
+  --accent:         #F07C00;
+  --accent-soft:    rgba(240, 124, 0, 0.10);
+  --accent-mid:     rgba(240, 124, 0, 0.22);
+  --accent-border:  rgba(240, 124, 0, 0.35);
+
+  /* Text */
+  --text-primary:   #18181B;
+  --text-secondary: #71717A;
+  --text-muted:     #A1A1AA;
+  --text-accent:    #F07C00;
+
+  /* Borders */
+  --border:         rgba(0, 0, 0, 0.08);
+  --border-strong:  rgba(0, 0, 0, 0.14);
+  --border-accent:  rgba(240, 124, 0, 0.30);
+
+  /* Glass */
+  --glass-blur:     saturate(180%) blur(20px);
+  --glass-border:   1px solid rgba(255, 255, 255, 0.6);
+
+  /* Shadows */
+  --shadow-sm:      0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md:      0 4px 16px rgba(0,0,0,0.07), 0 2px 6px rgba(0,0,0,0.04);
+  --shadow-lg:      0 12px 40px rgba(0,0,0,0.10), 0 4px 12px rgba(0,0,0,0.06);
+  --shadow-xl:      0 24px 64px rgba(0,0,0,0.12), 0 8px 24px rgba(0,0,0,0.07);
+  --shadow-accent:  0 8px 24px rgba(240, 124, 0, 0.20);
+
+  /* Radius */
+  --r-sm:   8px;
+  --r-md:   14px;
+  --r-lg:   20px;
+  --r-xl:   28px;
+  --r-2xl:  36px;
 }
 
 * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
-  /* Universal font override to kill Arial */
-  font-family: 'Nunito', sans-serif !important;
+  font-family: 'Manrope', sans-serif !important;
 }
 
 body {
-  background-color: var(--bg-main);
+  background-color: var(--bg-base);
+  background-image:
+    radial-gradient(ellipse 80% 60% at 20% -10%, rgba(240,124,0,0.06) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 40% at 90% 100%, rgba(240,124,0,0.04) 0%, transparent 50%);
+  background-attachment: fixed;
   color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
-}
-/* Custom Dark Scrollbars */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  min-height: 100vh;
 }
 
-::-webkit-scrollbar-track {
-  background: #000000; /* Black track */
-  border-left: 1px solid #1a1a1a;
+/* ---- Scrollbars ---- */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.25); }
+* { scrollbar-width: thin; scrollbar-color: rgba(0,0,0,0.15) transparent; }
+
+/* ---- Glass Panel ---- */
+.panel {
+  background: var(--bg-surface);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: var(--glass-border);
+  border-radius: var(--r-xl);
+  padding: 28px 32px;
+  box-shadow: var(--shadow-md);
 }
 
-::-webkit-scrollbar-thumb {
-  background: #333333; /* Grey thumb */
-  border-radius: 10px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #555555; /* Lighter grey on hover */
-}
-
-/* For Firefox */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: #333333 #000000;
-}
+/* ---- Container ---- */
 .container {
-  max-width: 1400px;
+  max-width: 1440px;
   margin: 0 auto;
-  padding: 60px 40px;
+  padding: 48px 40px;
 }
 
-/* Header & Sidebar Side-by-Side */
+/* ---- Top Bar ---- */
 .top-bar {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 50px;
+  margin-bottom: 40px;
 }
 
+/* ---- Brand ---- */
 .delegation-brand {
-  font-size: 3.5rem;
+  font-size: 2.6rem;
   font-weight: 800;
-  letter-spacing: -2px;
+  letter-spacing: -1.5px;
   line-height: 1;
+  color: var(--text-primary);
 }
 
+/* ---- Label ---- */
+.label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 2.5px;
+  color: var(--text-accent);
+  margin-bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ---- Main Grid ---- */
 .main-grid {
   display: grid;
-  grid-template-columns: 1.5fr 1fr; /* This keeps them beside each other */
-  gap: 30px;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 24px;
   align-items: start;
 }
 
-/* Rounded Panels */
-.panel {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 35px;
-}
-
-.label {
-  font-size: 11px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 3px;
-  color: var(--accent);
-  margin-bottom: 25px;
-  display: block;
-}
-
-/* Modern Components */
+/* ---- Chat Row ---- */
 .chat-row {
-  background: var(--bg-input);
-  padding: 20px;
-  border-radius: var(--radius-md);
-  margin-bottom: 15px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  padding: 16px 18px;
+  border-radius: var(--r-md);
+  margin-bottom: 10px;
+  transition: box-shadow 0.15s;
 }
+.chat-row:hover { box-shadow: var(--shadow-sm); }
 
 .u-name {
-  font-weight: 800;
+  font-weight: 700;
+  font-size: 12px;
   color: var(--accent);
-  margin-bottom: 5px;
+  margin-bottom: 4px;
   display: block;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
+/* ---- Bloc Card ---- */
 .bloc-card {
-  background: var(--bg-input);
-  padding: 20px;
-  border-radius: var(--radius-md);
-  margin-bottom: 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  padding: 16px 18px;
+  border-radius: var(--r-md);
+  margin-bottom: 10px;
   display: flex;
   align-items: center;
-  gap: 15px;
-  border: 1px solid transparent;
+  gap: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.bloc-card:hover {
+  border-color: var(--accent-border);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+.bloc-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
 }
 
-.bloc-card:hover { border-color: var(--accent); }
-
-/* Buttons: No Arial allowed */
+/* ---- Buttons ---- */
 .primary-btn {
   background: var(--accent);
-  color: #000;
+  color: #fff;
   border: none;
-  padding: 14px 28px;
-  border-radius: 12px;
-  font-weight: 800;
-  cursor: pointer;
-  text-transform: uppercase;
+  padding: 11px 22px;
+  border-radius: var(--r-md);
+  font-weight: 700;
   font-size: 12px;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  transition: all 0.15s;
+  box-shadow: 0 4px 12px rgba(240,124,0,0.25);
+}
+.primary-btn:hover {
+  background: #D46E00;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-accent);
 }
 
 .logout-btn {
-  background: #222;
-  color: #fff;
-  border: 1px solid #333;
-  padding: 10px 20px;
-  border-radius: 12px;
-  font-weight: 700;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-strong);
+  padding: 9px 18px;
+  border-radius: var(--r-md);
+  font-weight: 600;
+  font-size: 12px;
   cursor: pointer;
-  margin-top: 15px;
+  margin-top: 12px;
+  transition: all 0.15s;
+}
+.logout-btn:hover {
+  background: #fff;
+  color: var(--text-primary);
+  border-color: var(--border-strong);
 }
 
-.logout-btn:hover { background: #333; }
-
-/* Modal */
+/* ---- Overlay & Modal ---- */
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.95);
+  background: rgba(15, 15, 15, 0.45);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -162,438 +230,75 @@ body {
 }
 
 .modal {
-  background: #111;
-  padding: 40px;
-  border-radius: var(--radius-lg);
-  width: 450px;
-  border: 1px solid var(--border);
-}
-/* Update these specific sections in your index.css */
-
-input, textarea, select {
-  width: 100%;
-  background: #000000;
-  border: 1px solid var(--border);
-  color: #ffffff;
-  padding: 18px 20px; /* Increased vertical padding for 'thickness' */
-  font-family: 'Nunito', sans-serif !important;
-  font-size: 16px;
-  font-weight: 400;
-  outline: none;
-  border-radius: var(--radius-md) !important; /* Forces the 16px rounding */
-  display: block;
-  margin-bottom: 20px;
-  box-sizing: border-box; /* Ensures padding doesn't break the width */
+  background: var(--bg-elevated);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: var(--glass-border);
+  padding: 36px;
+  border-radius: var(--r-xl);
+  width: 460px;
+  box-shadow: var(--shadow-xl);
 }
 
-.dark-input {
-  min-height: 56px; /* Guarantees it's never 'thin' */
-  background-color: var(--bg-input) !important;
-  border: 1px solid var(--border) !important;
-  transition: border-color 0.2s;
-}
-
-.dark-input:focus {
-  border-color: var(--accent) !important;
-}
-
-/* Modal Title fix */
 .modal h2 {
   font-weight: 800;
-  letter-spacing: -1px;
-  margin-bottom: 25px;
-  color: #fff;
-}
-/* Fix for the select dropdown looking weird */
-select.dark-input {
-  appearance: none; /* Removes default browser arrow for custom look */
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23FF8C00' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 15px center;
-  padding-right: 45px;
-  cursor: pointer;
-  min-height: 56px;
+  font-size: 20px;
+  letter-spacing: -0.5px;
+  margin-bottom: 22px;
+  color: var(--text-primary);
 }
 
-select option {
-  background: #111;
-  color: #fff;
-  padding: 10px;
-}
-/* Google Docs Style Page Container */
-.doc-page {
+/* ---- Inputs ---- */
+input, textarea, select {
   width: 100%;
-  max-width: 850px; /* Standard A4-ish width */
-  min-height: 1100px;
-  background: #0D0D0D;
-  border: 1px solid #1A1A1A;
-  border-radius: 4px; /* Slight rounding for the page itself */
-  padding: 80px 60px; /* Massive professional margins */
-  box-shadow: 0 20px 50px rgba(0,0,0,0.8);
-  display: flex;
-  flex-direction: column;
-}
-
-.doc-textarea {
-  flex: 1;
-  background: transparent !important;
-  border: none !important;
-  color: #efefef !important;
-  font-family: 'Nunito', sans-serif !important;
-  font-size: 18px !important;
-  line-height: 1.8 !important; /* Professional reading height */
-  outline: none !important;
-  resize: none !important;
-  padding: 0 !important;
-}
-
-/* Custom Scrollbar for the Doc */
-.doc-page::-webkit-scrollbar {
-  display: none; /* Keep the clean page look */
-}
-/* Document Page Wrapper */
-.doc-page {
-  background: #0f0f0f;
-  width: 100%;
-  max-width: 850px;
-  min-height: 1000px;
-  border: 1px solid #1a1a1a;
-  border-radius: var(--radius-md);
-  padding: 80px 60px;
-  box-shadow: 0 10px 40px rgba(0,0,0,0.8);
-  display: flex;
-  flex-direction: column;
-}
-
-/* Block Editor Select Dropdown */
-.block-select {
-  background: transparent;
-  color: #666;
-  border: none;
-  font-family: 'Nunito', sans-serif !important;
-  font-size: 11px;
-  text-transform: uppercase;
-  font-weight: 800;
-  outline: none;
-  cursor: pointer;
-  width: 90px;
-  flex-shrink: 0;
-}
-
-/* Base Block Input */
-.block-input {
-  flex: 1;
-  background: transparent;
-  border: none !important;
-  color: #fff;
-  font-family: 'Nunito', sans-serif !important;
-  outline: none;
-  resize: none;
-  overflow: hidden; /* Let it grow naturally */
-}
-
-/* Dynamic Block Styling based on selection */
-.type-heading {
-  font-size: 24px;
-  font-weight: 800;
-  color: var(--accent);
-  margin-top: 20px;
-}
-.type-paragraph {
-  font-size: 16px;
-  font-weight: 400;
-}
-.type-point {
-  font-size: 16px;
-  padding-left: 20px;
-  position: relative;
-}
-.type-point::before { content: "1."; position: absolute; left: 0; color: var(--accent); font-weight: 800; }
-
-.type-subpoint {
-  font-size: 15px;
-  padding-left: 40px;
-  position: relative;
-}
-.type-subpoint::before { content: "a."; position: absolute; left: 20px; color: #888; font-weight: 800; }
-
-.type-subsubpoint {
+  background: var(--bg-input);
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
+  padding: 14px 16px;
+  font-family: 'Manrope', sans-serif !important;
   font-size: 14px;
-  padding-left: 60px;
-  position: relative;
-}
-.type-subsubpoint::before { content: "i."; position: absolute; left: 40px; color: #555; font-weight: 800; }
-/* Fix for the white input bug in the screenshot */
-input, select, textarea, .dark-input {
-  background-color: #1a1a1a !important; /* Forces dark mode */
-  color: #ffffff !important;
-  border: 1px solid #333 !important;
-  font-family: 'Nunito', sans-serif !important;
+  font-weight: 500;
+  outline: none;
+  border-radius: var(--r-md) !important;
+  display: block;
+  margin-bottom: 14px;
   box-sizing: border-box;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+input:focus, textarea:focus, select:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px rgba(240, 124, 0, 0.12);
 }
 
 input::placeholder, textarea::placeholder {
-  color: #666 !important;
+  color: var(--text-muted);
+  font-weight: 500;
 }
 
-/* --- The Seamless Google Docs Page --- */
-.doc-page {
-  background: #0d0d0d;
-  width: 100%;
-  max-width: 900px;
-  min-height: 100vh;
-  border: 1px solid #1a1a1a;
-  border-radius: var(--radius-md);
-  padding: 100px 80px; /* Massive document margins */
-  box-shadow: 0 20px 60px rgba(0,0,0,0.8);
-  display: flex;
-  flex-direction: column;
+.dark-input {
+  min-height: 48px;
+  background: var(--bg-input) !important;
+  border: 1px solid var(--border-strong) !important;
+}
+.dark-input:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px rgba(240, 124, 0, 0.12) !important;
 }
 
-/* Hide formatting selector until hovered to look natural */
-.doc-block-row {
-  display: flex;
-  gap: 15px;
-  margin-bottom: 5px;
-  position: relative;
-}
-
-.doc-format-select {
-  width: 35px;
-  height: 35px;
-  padding: 0 !important;
-  background: transparent !important;
-  border: none !important;
-  color: #444 !important;
-  font-weight: 900;
-  cursor: pointer;
+select.dark-input {
   appearance: none;
-  text-align: center;
-  opacity: 0; /* Hidden by default */
-  transition: opacity 0.2s;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23F07C00' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 14px center !important;
+  padding-right: 40px;
+  cursor: pointer;
+  min-height: 48px;
 }
 
-/* Show the selector only when hovering near the block */
-.doc-block-row:hover .doc-format-select {
-  opacity: 1;
-}
-
-/* Seamless auto-expanding text areas */
-.doc-textarea {
-  flex: 1;
-  background: transparent !important;
-  border: none !important;
-  padding: 8px 0 !important;
-  outline: none !important;
-  resize: none !important;
-  overflow: hidden;
-  line-height: 1.6;
-}
-
-/* Formatting Types */
-.type-heading {
-  font-size: 26px;
-  font-weight: 800;
-  color: var(--accent) !important;
-  margin-top: 30px;
-}
-
-.type-paragraph {
-  font-size: 16px;
-  font-weight: 400;
-}
-
-/* Numbering & Indentation (Points & Subpoints) */
-.type-point {
-  font-size: 16px;
-  padding-left: 25px !important;
-  position: relative;
-}
-.doc-block-row:has(.type-point)::before {
-  content: "1.";
-  position: absolute; left: 50px; top: 8px;
-  color: var(--accent); font-weight: 800;
-}
-
-.type-subpoint {
-  font-size: 15px;
-  padding-left: 50px !important;
-}
-.doc-block-row:has(.type-subpoint)::before {
-  content: "a.";
-  position: absolute; left: 75px; top: 8px;
-  color: #888; font-weight: 800;
-}
-
-.type-subsubpoint {
-  font-size: 14px;
-  padding-left: 75px !important;
-}
-.doc-block-row:has(.type-subsubpoint)::before {
-  content: "i.";
-  position: absolute; left: 100px; top: 8px;
-  color: #555; font-weight: 800;
-}
-/* --- Workflowy / Outliner Editor CSS --- */
-.doc-page {
-  background: #0d0d0d;
-  width: 100%;
-  max-width: 900px;
-  min-height: 100vh;
-  border: 1px solid #1a1a1a;
-  border-radius: var(--radius-md);
-  padding: 80px; 
-  box-shadow: 0 20px 60px rgba(0,0,0,0.8);
-  display: flex;
-  flex-direction: column;
-}
-
-.workflowy-row {
-  display: flex;
-  align-items: flex-start;
-  margin-bottom: 8px;
-  transition: margin-left 0.1s ease-in-out;
-}
-
-.workflowy-prefix {
-  width: 35px;
-  padding-top: 4px;
-  color: var(--accent);
-  font-weight: 800;
-  font-size: 16px;
-  flex-shrink: 0;
-  text-align: right;
-  padding-right: 10px;
-  user-select: none;
-}
-
-/* The Overlay Trick for Orange Periods */
-.workflowy-input-wrapper {
-  position: relative;
-  flex: 1;
-  min-height: 26px; /* Prevents collapsing */
-}
-
-.highlight-layer {
-  position: relative; /* This pushes the height of the row automatically */
-  width: 100%;
-  padding: 4px 0;
-  font-family: 'Nunito', sans-serif !important;
-  font-size: 16px;
-  line-height: 1.6;
-  color: #fff; /* Main text color */
-  white-space: pre-wrap;
-  word-break: break-word;
-  pointer-events: none; /* Let clicks pass through to textarea */
-}
-
-.transparent-textarea {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: transparent !important;
-  border: none !important;
-  padding: 4px 0 !important;
-  font-family: 'Nunito', sans-serif !important;
-  font-size: 16px;
-  line-height: 1.6;
-  outline: none !important;
-  resize: none !important;
-  overflow: hidden;
-  
-  /* The Magic: Hide native text, but keep the blinking cursor visible */
-  color: transparent !important;
-  caret-color: #fff !important; 
-}
-
-.transparent-textarea::placeholder {
-  color: #444 !important;
-}
-/* --- Seamless Editor Overlays --- */
-.workflowy-row {
-  display: flex;
-  align-items: flex-start;
-  margin-bottom: 8px;
-  transition: margin-left 0.1s ease-in-out;
-}
-
-.workflowy-prefix {
-  width: 45px;
-  padding-top: 4px;
-  color: var(--accent);
-  font-weight: 800;
-  font-size: 16px;
-  flex-shrink: 0;
-  text-align: right;
-  padding-right: 15px;
-  user-select: none;
-}
-
-.workflowy-input-wrapper {
-  position: relative;
-  flex: 1;
-  min-height: 26px; 
-}
-
-/* Base styles inherited by both layers to guarantee perfect overlap */
-.highlight-layer, .transparent-textarea {
-  width: 100%;
-  padding: 4px 0 !important;
-  font-family: 'Nunito', sans-serif !important;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-/* The visual layer (Orange dots live here) */
-.highlight-layer {
-  position: relative; 
-  color: #fff; 
-  pointer-events: none; 
-}
-
-/* The interactive layer (Native text hidden, cursor visible) */
-.transparent-textarea {
-  position: absolute;
-  top: 0;
-  left: 0;
-  height: 100%;
-  background: transparent !important;
-  border: none !important;
-  outline: none !important;
-  resize: none !important;
-  overflow: hidden;
-  color: transparent !important;
-  caret-color: #fff !important; 
-}
-
-.transparent-textarea::placeholder {
-  color: #444 !important;
-}
-
-/* --- Dynamic Block Typography --- */
-.type-heading .highlight-layer,
-.type-heading.transparent-textarea {
-  font-size: 32px;
-  font-weight: 900;
-  line-height: 1.3;
-  margin-bottom: 20px;
-  color: var(--accent); /* Headings get orange tint */
-  text-transform: uppercase;
-  letter-spacing: -1px;
-}
-
-.type-paragraph .highlight-layer,
-.type-paragraph.transparent-textarea {
-  font-size: 16px;
-  font-weight: 400;
-  margin-bottom: 10px;
-}
-
-.type-point .highlight-layer,
-.type-point.transparent-textarea {
-  font-size: 16px;
-  font-weight: 400;
+select option {
+  background: #fff;
+  color: var(--text-primary);
 }

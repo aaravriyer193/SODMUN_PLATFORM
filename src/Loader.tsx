@@ -7,7 +7,7 @@ const Loader = () => {
       <div className="loader" />
     </StyledWrapper>
   );
-}
+};
 
 const StyledWrapper = styled.div`
   .loader {
@@ -22,10 +22,11 @@ const StyledWrapper = styled.div`
     position: absolute;
     transform: translate(-50%, -50%) rotate(45deg);
     height: 100%;
-    width: 4px;
-    background: #fff;
+    width: 3px;
+    background: rgba(0, 0, 0, 0.18);
     left: 50%;
     top: 50%;
+    border-radius: 2px;
   }
 
   .loader:after {
@@ -35,55 +36,25 @@ const StyledWrapper = styled.div`
     bottom: 0.18em;
     width: 1em;
     height: 1em;
-    background-color: orange;
+    background-color: #F07C00;
     border-radius: 15%;
+    box-shadow: 0 4px 12px rgba(240, 124, 0, 0.35);
     animation: rollingRock 2.5s cubic-bezier(.79, 0, .47, .97) infinite;
   }
 
   @keyframes rollingRock {
-    0% {
-      transform: translate(0, -1em) rotate(-45deg)
-    }
-
-    5% {
-      transform: translate(0, -1em) rotate(-50deg)
-    }
-
-    20% {
-      transform: translate(1em, -2em) rotate(47deg)
-    }
-
-    25% {
-      transform: translate(1em, -2em) rotate(45deg)
-    }
-
-    30% {
-      transform: translate(1em, -2em) rotate(40deg)
-    }
-
-    45% {
-      transform: translate(2em, -3em) rotate(137deg)
-    }
-
-    50% {
-      transform: translate(2em, -3em) rotate(135deg)
-    }
-
-    55% {
-      transform: translate(2em, -3em) rotate(130deg)
-    }
-
-    70% {
-      transform: translate(3em, -4em) rotate(217deg)
-    }
-
-    75% {
-      transform: translate(3em, -4em) rotate(220deg)
-    }
-
-    100% {
-      transform: translate(0, -1em) rotate(-225deg)
-    }
-  }`;
+    0% { transform: translate(0, -1em) rotate(-45deg) }
+    5% { transform: translate(0, -1em) rotate(-50deg) }
+    20% { transform: translate(1em, -2em) rotate(47deg) }
+    25% { transform: translate(1em, -2em) rotate(45deg) }
+    30% { transform: translate(1em, -2em) rotate(40deg) }
+    45% { transform: translate(2em, -3em) rotate(137deg) }
+    50% { transform: translate(2em, -3em) rotate(135deg) }
+    55% { transform: translate(2em, -3em) rotate(130deg) }
+    70% { transform: translate(3em, -4em) rotate(217deg) }
+    75% { transform: translate(3em, -4em) rotate(220deg) }
+    100% { transform: translate(0, -1em) rotate(-225deg) }
+  }
+`;
 
 export default Loader;

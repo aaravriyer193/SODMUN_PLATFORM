@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, Navigate, useLocation } from 'react-router-dom';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { BrowserRouter as Router, Routes, Route, Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './AuthContext';
 import { supabase } from './api';
 import Login from './Login';
@@ -9,142 +9,626 @@ import Resolutions from './Resolutions';
 import SoddyBot from './SoddyBot';
 import Schedule from './Schedule';
 import Scoring from './Scoring';
-import Loader from './Loader'; // Ensure this file exists
+import Loader from './Loader';
 import logo from './assets/logo.png';
 
-// --- CLEAN SVG ICONS ---
-const IconDash = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"></rect><rect x="14" y="3" width="7" height="5" rx="1"></rect><rect x="14" y="12" width="7" height="9" rx="1"></rect><rect x="3" y="16" width="7" height="5" rx="1"></rect></svg>;
-const IconChat = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>;
-const IconDocs = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>;
-const IconBot = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"></rect><circle cx="12" cy="5" r="2"></circle><path d="M12 7v4"></path><line x1="8" y1="16" x2="8.01" y2="16"></line><line x1="16" y1="16" x2="16.01" y2="16"></line></svg>;
-const IconCal = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>;
-const IconCommand = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>;
+// ─── TYPES ────────────────────────────────────────────────────────────────────
+interface Notification {
+  id: string;
+  sender: string;       // display name
+  senderRole: string;
+  content: string;
+  room: string;         // recipient_group value
+  roomLabel: string;
+  timestamp: Date;
+  read: boolean;
+}
 
-// --- FULL SCREEN LOADER ---
+// ─── ICONS ────────────────────────────────────────────────────────────────────
+const IconDash    = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>;
+const IconChat    = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>;
+const IconDocs    = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>;
+const IconBot     = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8.01" y2="16"/><line x1="16" y1="16" x2="16.01" y2="16"/></svg>;
+const IconCal     = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>;
+const IconScore   = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>;
+const IconPlus    = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
+const IconLogout  = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>;
+const IconChevron = ({ dir = 'left' }: { dir?: 'left'|'right' }) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">{dir === 'left' ? <polyline points="15 18 9 12 15 6"/> : <polyline points="9 18 15 12 9 6"/>}</svg>;
+const IconClose   = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
+const IconCheck   = () => <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>;
+const IconUsers   = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
+const IconBell    = ({ dot }: { dot?: boolean }) => (
+  <span style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+    {dot && <span style={{ position: 'absolute', top: -2, right: -2, width: 7, height: 7, borderRadius: '50%', background: '#F07C00', border: '1.5px solid #fff', display: 'block' }} />}
+  </span>
+);
+const IconGlobe   = () => <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>;
+const IconLock    = () => <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>;
+const IconDM      = () => <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>;
+
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+const timeAgo = (d: Date) => {
+  const s = Math.floor((Date.now() - d.getTime()) / 1000);
+  if (s < 60)  return 'just now';
+  if (s < 3600) return `${Math.floor(s/60)}m ago`;
+  return `${Math.floor(s/3600)}h ago`;
+};
+
+const roomIcon = (room: string) => {
+  if (room.startsWith('dm_'))   return <IconDM />;
+  if (room.startsWith('bloc_')) return <IconLock />;
+  return <IconGlobe />;
+};
+
+// ─── LOADING SCREEN ───────────────────────────────────────────────────────────
 const LoadingScreen = ({ label }: { label: string }) => (
-  <div style={{
-    height: '100vh', width: '100vw', display: 'flex', flexDirection: 'column',
-    alignItems: 'center', justifyContent: 'center', background: '#000',
-    position: 'fixed', top: 0, left: 0, zIndex: 9999
-  }}>
+  <div style={{ height:'100vh', width:'100vw', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', background:'linear-gradient(135deg,#F5F3EF 0%,#FEF3E6 100%)', position:'fixed', inset:0, zIndex:9999 }}>
     <Loader />
-    <div style={{ 
-      marginTop: '20px', color: '#FF8C00', fontWeight: 900, 
-      letterSpacing: '3px', textTransform: 'uppercase', fontSize: '12px' 
-    }}>
-      {label}...
-    </div>
+    <p style={{ marginTop:24, color:'#F07C00', fontWeight:700, letterSpacing:'2.5px', textTransform:'uppercase', fontSize:'11px', opacity:0.75 }}>{label}…</p>
   </div>
 );
 
-// --- NAV ITEM COMPONENT ---
-const NavItem = ({ to, icon, label, isChairLink = false }: { to: string, icon: React.ReactNode, label: string, isChairLink?: boolean }) => {
+// ─── TOAST ────────────────────────────────────────────────────────────────────
+const Toast = ({ notif, onDismiss, onGo }: { notif: Notification; onDismiss: () => void; onGo: () => void }) => {
+  useEffect(() => {
+    const t = setTimeout(onDismiss, 5000);
+    return () => clearTimeout(t);
+  }, []);
+
+  return (
+    <div
+      className="toast-card"
+      onClick={onGo}
+      style={{ cursor: 'pointer' }}
+    >
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:8 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:6, minWidth:0 }}>
+          <span style={{ color:'#F07C00', opacity:0.75, flexShrink:0 }}>{roomIcon(notif.room)}</span>
+          <span style={{ fontSize:'10px', fontWeight:700, textTransform:'uppercase', letterSpacing:'1px', color:'#F07C00', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+            {notif.roomLabel}
+          </span>
+        </div>
+        <button
+          onClick={e => { e.stopPropagation(); onDismiss(); }}
+          style={{ background:'transparent', border:'none', cursor:'pointer', color:'#BABABA', display:'flex', alignItems:'center', padding:2, flexShrink:0 }}
+        ><IconClose /></button>
+      </div>
+      <p style={{ fontSize:'12px', fontWeight:700, color:'#18181B', margin:'4px 0 2px' }}>{notif.sender}</p>
+      <p style={{ fontSize:'12px', color:'#52525B', fontWeight:400, lineHeight:1.4, overflow:'hidden', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical' }}>
+        {notif.content}
+      </p>
+      {/* Progress bar */}
+      <div style={{ position:'absolute', bottom:0, left:0, right:0, height:2, background:'rgba(0,0,0,0.06)', borderRadius:'0 0 14px 14px', overflow:'hidden' }}>
+        <div className="toast-progress" />
+      </div>
+    </div>
+  );
+};
+
+// ─── NOTIFICATION PANEL ───────────────────────────────────────────────────────
+const NotifPanel = ({
+  notifs, onClose, onMarkAllRead, onClear, onGoToRoom
+}: {
+  notifs: Notification[];
+  onClose: () => void;
+  onMarkAllRead: () => void;
+  onClear: () => void;
+  onGoToRoom: (notif: Notification) => void;
+}) => {
+  const unread = notifs.filter(n => !n.read).length;
+
+  return (
+    <div className="notif-panel">
+      {/* Header */}
+      <div style={{ padding:'16px 16px 12px', borderBottom:'1px solid rgba(0,0,0,0.07)', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+          <span style={{ fontSize:'13px', fontWeight:800, color:'#18181B' }}>Notifications</span>
+          {unread > 0 && (
+            <span style={{ background:'#F07C00', color:'#fff', fontSize:'10px', fontWeight:800, padding:'1px 6px', borderRadius:'99px' }}>{unread}</span>
+          )}
+        </div>
+        <div style={{ display:'flex', gap:4 }}>
+          {unread > 0 && (
+            <button onClick={onMarkAllRead} style={{ background:'transparent', border:'none', cursor:'pointer', fontSize:'11px', color:'#F07C00', fontWeight:600, fontFamily:'Manrope,sans-serif', padding:'4px 8px', borderRadius:6, transition:'background 0.1s' }}
+              onMouseEnter={e=>(e.currentTarget as HTMLElement).style.background='rgba(240,124,0,0.07)'}
+              onMouseLeave={e=>(e.currentTarget as HTMLElement).style.background='transparent'}
+            >Mark all read</button>
+          )}
+          <button onClick={onClose} style={{ width:26, height:26, borderRadius:7, border:'1px solid rgba(0,0,0,0.09)', background:'rgba(0,0,0,0.03)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'#888' }}><IconClose /></button>
+        </div>
+      </div>
+
+      {/* List */}
+      <div style={{ maxHeight:340, overflowY:'auto' }}>
+        {notifs.length === 0 ? (
+          <div style={{ padding:'36px 16px', textAlign:'center' }}>
+            <div style={{ fontSize:28, marginBottom:8 }}>🔔</div>
+            <p style={{ fontSize:'13px', color:'#A1A1AA', fontWeight:500 }}>No notifications yet</p>
+            <p style={{ fontSize:'11px', color:'#C4C4C4', marginTop:4 }}>New messages will appear here</p>
+          </div>
+        ) : (
+          notifs.map(n => (
+            <div
+              key={n.id}
+              onClick={() => onGoToRoom(n)}
+              className={`notif-item ${!n.read ? 'notif-unread' : ''}`}
+            >
+              <div style={{ display:'flex', alignItems:'flex-start', gap:10 }}>
+                {/* Unread dot */}
+                <div style={{ width:7, height:7, borderRadius:'50%', background: n.read ? 'transparent' : '#F07C00', marginTop:5, flexShrink:0, transition:'background 0.2s' }} />
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:5, marginBottom:3 }}>
+                    <span style={{ color: n.read ? '#BABABA' : '#F07C00', opacity:0.85 }}>{roomIcon(n.room)}</span>
+                    <span style={{ fontSize:'10px', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.8px', color: n.read ? '#A1A1AA' : '#F07C00' }}>{n.roomLabel}</span>
+                    <span style={{ fontSize:'10px', color:'#C4C4C4', fontWeight:400, marginLeft:'auto', whiteSpace:'nowrap' }}>{timeAgo(n.timestamp)}</span>
+                  </div>
+                  <p style={{ fontSize:'12px', fontWeight: n.read ? 500 : 700, color:'#27272A', marginBottom:2 }}>{n.sender}</p>
+                  <p style={{ fontSize:'12px', color:'#71717A', fontWeight:400, lineHeight:1.4, overflow:'hidden', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical' }}>{n.content}</p>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Footer */}
+      {notifs.length > 0 && (
+        <div style={{ padding:'10px 14px', borderTop:'1px solid rgba(0,0,0,0.07)', display:'flex', justifyContent:'flex-end' }}>
+          <button onClick={onClear} style={{ background:'transparent', border:'none', cursor:'pointer', fontSize:'11px', color:'#BABABA', fontWeight:600, fontFamily:'Manrope,sans-serif', padding:'4px 8px', borderRadius:6, transition:'all 0.1s' }}
+            onMouseEnter={e=>(e.currentTarget as HTMLElement).style.color='#DC2626'}
+            onMouseLeave={e=>(e.currentTarget as HTMLElement).style.color='#BABABA'}
+          >Clear all</button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── NAV ITEM ─────────────────────────────────────────────────────────────────
+const NavItem = ({ to, icon, label, badge, collapsed, isChair }: {
+  to: string; icon: React.ReactNode; label: string;
+  badge?: number; collapsed: boolean; isChair?: boolean;
+}) => {
   const location = useLocation();
   const isActive = location.pathname === to;
   return (
-    <Link to={to} className={`nav-link ${isActive ? 'active' : ''} ${isChairLink ? 'chair-link' : ''}`}>
-      <span className="nav-icon">{icon}</span>
-      {label}
+    <Link to={to} title={collapsed ? label : undefined} style={{ textDecoration:'none', display:'block' }}>
+      <div className={`nav-item ${isActive?'nav-active':''} ${isChair?'nav-chair':''}`} style={{ justifyContent:collapsed?'center':'flex-start' }}>
+        <span className="nav-icon-wrap">{icon}</span>
+        {!collapsed && <span className="nav-label">{label}</span>}
+        {!collapsed && badge != null && badge > 0 && <span className="nav-badge">{badge > 99 ? '99+' : badge}</span>}
+        {/* Collapsed badge dot */}
+        {collapsed && badge != null && badge > 0 && (
+          <span style={{ position:'absolute', top:4, right:4, width:7, height:7, borderRadius:'50%', background:'#F07C00', border:'1.5px solid rgba(255,255,255,0.9)' }} />
+        )}
+      </div>
     </Link>
   );
 };
 
-// --- ROUTE GUARDS ---
+// ─── ROUTE GUARDS ─────────────────────────────────────────────────────────────
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
   if (loading) return <LoadingScreen label="Authenticating" />;
   return user ? <>{children}</> : <Navigate to="/login" />;
 };
 
-const ChairRoute = ({ children, role, roleLoading }: { children: React.ReactNode, role: string | null, roleLoading: boolean }) => {
-  if (roleLoading) return <LoadingScreen label="Verifying Clearance" />;
-  const isStaff = role !== 'Delegate' && role !== null;
-  return isStaff ? <>{children}</> : <Navigate to="/" />;
+const ChairRoute = ({ children, role, roleLoading }: { children: React.ReactNode; role: string|null; roleLoading: boolean }) => {
+  if (roleLoading) return <LoadingScreen label="Verifying clearance" />;
+  return role !== 'Delegate' && role !== null ? <>{children}</> : <Navigate to="/" />;
 };
 
-const AppShell = () => {
-  const { user } = useAuth();
-  const [role, setRole] = useState<string | null>(null);
-  const [roleLoading, setRoleLoading] = useState(true);
+// ─── NEW BLOC MODAL ────────────────────────────────────────────────────────────
+const NewBlocModal = ({ onClose, profile, authUser }: { onClose: ()=>void; profile: any; authUser: any }) => {
+  const [step, setStep]           = useState<'name'|'members'>('name');
+  const [blocName, setBlocName]   = useState('');
+  const [users, setUsers]         = useState<any[]>([]);
+  const [selected, setSelected]   = useState<string[]>([]);
+  const [loading, setLoading]     = useState(false);
+  const [done, setDone]           = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (user) {
-      supabase.from('users').select('role').eq('id', user.id).single()
-        .then(({ data }) => {
-          setRole(data?.role || 'Delegate');
-          setRoleLoading(false);
-        });
-    } else {
-      setRole(null);
-      setRoleLoading(false);
-    }
-  }, [user]);
+    supabase.from('users').select('*').eq('committee', profile?.committee).eq('role','Delegate').neq('id', authUser?.id)
+      .then(({ data }) => { if (data) setUsers(data); });
+    setTimeout(() => inputRef.current?.focus(), 80);
+  }, []);
 
-  const showCommandCenter = role !== 'Delegate' && role !== null;
+  const toggle = (id: string) => setSelected(p => p.includes(id) ? p.filter(x=>x!==id) : [...p,id]);
+
+  const handleCreate = async () => {
+    if (!blocName.trim() || selected.length===0) return;
+    setLoading(true);
+    const { data: bloc } = await supabase.from('blocs').insert([{ name:blocName, committee:profile?.committee }]).select().single();
+    if (bloc) await supabase.from('bloc_members').insert([authUser.id,...selected].map(uid=>({ user_id:uid, bloc_id:bloc.id })));
+    setDone(true);
+    setTimeout(onClose, 1300);
+  };
 
   return (
-    <div className="app-container">
-      <style>{`
-        .app-container { display: flex; height: 100vh; width: 100vw; overflow: hidden; background: #000; }
-        .sidebar { width: 260px; background: #0a0a0a; border-right: 1px solid #1a1a1a; display: flex; flex-direction: column; padding: 30px 20px; z-index: 100; }
-        .sidebar-logo-container { display: flex; align-items: center; gap: 15px; margin-bottom: 40px; padding: 0 10px; }
-        .sidebar-logo { height: 55px; }
-        .nav-menu { display: flex; flex-direction: column; gap: 8px; flex: 1; }
-        .nav-link { display: flex; align-items: center; gap: 15px; padding: 14px 16px; color: #888; text-decoration: none; font-weight: 700; font-size: 14px; border-radius: 12px; transition: 0.2s; border: 1px solid transparent; }
-        .nav-icon { display: flex; align-items: center; justify-content: center; color: inherit; }
-        .nav-link:hover { color: #fff; background: #111; }
-        .nav-link.active { background: rgba(255,140,0,0.1); color: #FF8C00; border-color: rgba(255,140,0,0.2); }
-        .chair-link { margin-top: 20px; color: #FF8C00; border: 1px dashed rgba(255,140,0,0.3); }
-        .chair-link:hover { background: #FF8C00; color: #000; border-style: solid; }
-        .chair-link.active { background: #FF8C00; color: #000; box-shadow: 0 0 15px rgba(255,140,0,0.3); }
-        .main-content { flex: 1; height: 100vh; overflow-y: auto; background: #000; position: relative; }
-      `}</style>
-
-      {user && (
-        <aside className="sidebar">
-          <div className="sidebar-logo-container">
-            <img src={logo} alt="SODMUN" className="sidebar-logo" />
+    <div onClick={e=>{ if(e.target===e.currentTarget) onClose(); }}
+      style={{ position:'fixed', inset:0, zIndex:2000, background:'rgba(10,8,5,0.35)', backdropFilter:'blur(12px)', WebkitBackdropFilter:'blur(12px)', display:'flex', alignItems:'center', justifyContent:'center', animation:'fadeIn 0.15s ease' }}>
+      <style>{`@keyframes fadeIn{from{opacity:0}to{opacity:1}} @keyframes modalIn{from{opacity:0;transform:translateY(14px) scale(0.97)}to{opacity:1;transform:translateY(0) scale(1)}} .nbm{animation:modalIn 0.22s cubic-bezier(0.34,1.4,0.64,1);}`}</style>
+      <div className="nbm" style={{ background:'rgba(255,255,255,0.97)', backdropFilter:'blur(24px)', border:'1px solid rgba(255,255,255,0.8)', borderRadius:24, width:420, boxShadow:'0 32px 80px rgba(0,0,0,0.14),0 8px 24px rgba(0,0,0,0.07)', overflow:'hidden' }}>
+        <div style={{ padding:'24px 24px 0', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+          <div>
+            <p style={{ fontSize:'10px', fontWeight:700, textTransform:'uppercase', letterSpacing:'2px', color:'#F07C00', marginBottom:4 }}>{step==='name'?'Step 1 of 2':'Step 2 of 2'}</p>
+            <h2 style={{ fontSize:'18px', fontWeight:800, color:'#18181B', letterSpacing:'-0.5px', margin:0 }}>{done?'✓ Alliance Formed':step==='name'?'Name your Alliance':'Add Delegates'}</h2>
           </div>
-          <nav className="nav-menu">
-            <NavItem to="/" icon={<IconDash />} label="Dashboard" />
-            <NavItem to="/chat" icon={<IconChat />} label="Communications" />
-            <NavItem to="/resolutions" icon={<IconDocs />} label="Resolutions" />
-            <NavItem to="/soddy" icon={<IconBot />} label="Soddy AI" />
-            <NavItem to="/schedule" icon={<IconCal />} label="Schedule" />
-            
-            {showCommandCenter && (
-              <>
-                <span style={{ fontSize: '11px', fontWeight: 800, color: '#FF8C00', textTransform: 'uppercase', marginTop: '30px', marginBottom: '5px', paddingLeft: '10px' }}>
-                  Chair Access
-                </span>
-                <NavItem to="/scoring" icon={<IconCommand />} label="Scoring Sheet" isChairLink={true} />
-              </>
-            )}
-          </nav>
-        </aside>
-      )}
-
-      <main className="main-content">
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-          <Route path="/chat" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
-          <Route path="/resolutions" element={<ProtectedRoute><Resolutions /></ProtectedRoute>} />
-          <Route path="/soddy" element={<ProtectedRoute><SoddyBot /></ProtectedRoute>} />
-          <Route path="/schedule" element={<ProtectedRoute><Schedule /></ProtectedRoute>} />
-          <Route path="/scoring" element={
-            <ProtectedRoute>
-              <ChairRoute role={role} roleLoading={roleLoading}>
-                <Scoring />
-              </ChairRoute>
-            </ProtectedRoute>
-          } />
-        </Routes>
-      </main>
+          <button onClick={onClose} style={{ width:32, height:32, borderRadius:10, border:'1px solid rgba(0,0,0,0.09)', background:'rgba(0,0,0,0.03)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'#71717A' }}><IconClose /></button>
+        </div>
+        <div style={{ margin:'16px 24px 0', height:3, background:'rgba(0,0,0,0.06)', borderRadius:99, overflow:'hidden' }}>
+          <div style={{ height:'100%', width:step==='name'?'50%':'100%', background:'#F07C00', borderRadius:99, transition:'width 0.3s ease' }} />
+        </div>
+        <div style={{ padding:'20px 24px 24px' }}>
+          {done ? (
+            <div style={{ textAlign:'center', padding:'20px 0' }}>
+              <div style={{ width:56, height:56, borderRadius:'50%', background:'rgba(34,197,94,0.10)', border:'2px solid rgba(34,197,94,0.25)', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 12px', fontSize:24 }}>✓</div>
+              <p style={{ fontSize:'14px', color:'#52525B', fontWeight:500 }}><strong style={{ color:'#18181B' }}>{blocName}</strong> created with {selected.length} member{selected.length!==1?'s':''}.</p>
+            </div>
+          ) : step==='name' ? (
+            <>
+              <input ref={inputRef} value={blocName} onChange={e=>setBlocName(e.target.value)} onKeyDown={e=>{ if(e.key==='Enter'&&blocName.trim()) setStep('members'); }} placeholder="e.g. Progressive Bloc, G7 Alliance…" style={{ width:'100%', padding:'13px 16px', border:'1px solid rgba(0,0,0,0.12)', borderRadius:12, fontSize:14, fontWeight:500, fontFamily:'Manrope,sans-serif', outline:'none', background:'#FAFAF8', color:'#18181B', marginBottom:16, boxSizing:'border-box', transition:'border-color 0.15s,box-shadow 0.15s' }} onFocus={e=>{e.currentTarget.style.borderColor='#F07C00';e.currentTarget.style.boxShadow='0 0 0 3px rgba(240,124,0,0.10)';}} onBlur={e=>{e.currentTarget.style.borderColor='rgba(0,0,0,0.12)';e.currentTarget.style.boxShadow='none';}} />
+              <button disabled={!blocName.trim()} onClick={()=>setStep('members')} style={{ width:'100%', height:44, background:blocName.trim()?'#F07C00':'rgba(0,0,0,0.06)', color:blocName.trim()?'#fff':'#A1A1AA', border:'none', borderRadius:12, fontWeight:700, fontSize:13, cursor:blocName.trim()?'pointer':'not-allowed', fontFamily:'Manrope,sans-serif', transition:'all 0.15s', boxShadow:blocName.trim()?'0 4px 12px rgba(240,124,0,0.25)':'none' }}>Continue →</button>
+            </>
+          ) : (
+            <>
+              <p style={{ fontSize:12, color:'#71717A', fontWeight:500, marginBottom:10 }}>Select delegates for <strong style={{ color:'#18181B' }}>{blocName}</strong></p>
+              <div style={{ maxHeight:220, overflowY:'auto', border:'1px solid rgba(0,0,0,0.09)', borderRadius:12, marginBottom:14, background:'#FAFAF8' }}>
+                {users.length===0 && <p style={{ padding:20, textAlign:'center', color:'#A1A1AA', fontSize:13 }}>No other delegates found</p>}
+                {users.map((u,i) => { const s=selected.includes(u.id); return (
+                  <div key={u.id} onClick={()=>toggle(u.id)} style={{ display:'flex', alignItems:'center', gap:12, padding:'11px 14px', cursor:'pointer', borderBottom:i<users.length-1?'1px solid rgba(0,0,0,0.06)':'none', background:s?'rgba(240,124,0,0.05)':'transparent', transition:'background 0.1s' }}>
+                    <div style={{ width:18, height:18, borderRadius:5, border:`2px solid ${s?'#F07C00':'rgba(0,0,0,0.15)'}`, background:s?'#F07C00':'transparent', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, transition:'all 0.12s' }}>{s&&<span style={{ color:'#fff' }}><IconCheck /></span>}</div>
+                    <span style={{ fontSize:13, fontWeight:600, color:s?'#18181B':'#52525B' }}>{u.delegation}</span>
+                  </div>
+                ); })}
+              </div>
+              <div style={{ display:'flex', gap:8 }}>
+                <button onClick={()=>setStep('name')} style={{ width:40, height:44, background:'rgba(0,0,0,0.04)', border:'1px solid rgba(0,0,0,0.09)', borderRadius:12, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'#71717A', flexShrink:0 }}><IconChevron dir="left" /></button>
+                <button disabled={selected.length===0||loading} onClick={handleCreate} style={{ flex:1, height:44, background:selected.length>0?'#F07C00':'rgba(0,0,0,0.06)', color:selected.length>0?'#fff':'#A1A1AA', border:'none', borderRadius:12, fontWeight:700, fontSize:13, cursor:selected.length>0?'pointer':'not-allowed', fontFamily:'Manrope,sans-serif', transition:'all 0.15s', boxShadow:selected.length>0?'0 4px 12px rgba(240,124,0,0.25)':'none' }}>
+                  {loading?'Creating…':`Form Alliance${selected.length>0?` (${selected.length})`:''}` }
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 };
 
+// ─── APP SHELL ────────────────────────────────────────────────────────────────
+const AppShell = () => {
+  const { user, logout }          = useAuth();
+  const [role, setRole]           = useState<string|null>(null);
+  const [profile, setProfile]     = useState<any>(null);
+  const [roleLoading, setRL]      = useState(true);
+  const [collapsed, setCollapsed] = useState(false);
+  const [showBloc, setShowBloc]   = useState(false);
+  const [showUserMenu, setShowUM] = useState(false);
+  const [showNotifPanel, setShowNP] = useState(false);
+  const [notifications, setNotifs] = useState<Notification[]>([]);
+  const [toasts, setToasts]       = useState<Notification[]>([]);
+
+  const userMenuRef  = useRef<HTMLDivElement>(null);
+  const notifPanelRef = useRef<HTMLDivElement>(null);
+  const profileRef   = useRef<any>(null);
+  const location     = useLocation();
+
+  const isChair = role !== 'Delegate' && role !== null;
+  const unreadCount = notifications.filter(n => !n.read).length;
+  const onChatPage  = location.pathname === '/chat';
+
+  // ── Load profile ──
+  useEffect(() => {
+    if (user) {
+      supabase.from('users').select('*').eq('id', user.id).single().then(({ data }) => {
+        setProfile(data); profileRef.current = data;
+        setRole(data?.role || 'Delegate');
+        setRL(false);
+      });
+    } else { setRole(null); setRL(false); }
+  }, [user]);
+
+  // ── Real-time message listener ──
+  useEffect(() => {
+    if (!user) return;
+    const channel = supabase.channel('app_notifications')
+      .on('postgres_changes', { event:'INSERT', schema:'public', table:'messages' }, async (payload) => {
+        const msg = payload.new;
+        // Don't notify for own messages
+        if (msg.sender_id === user.id) return;
+
+        // Fetch sender info
+        const { data: sender } = await supabase.from('users').select('role,delegation,committee').eq('id', msg.sender_id).single();
+        const p = profileRef.current;
+
+        // Check if user should see this message
+        const isGlobal = msg.recipient_group === p?.committee;
+        const isDM     = msg.recipient_group?.startsWith('dm_') && msg.recipient_group?.includes(user.id);
+        const isBloc   = msg.recipient_group?.startsWith('bloc_');
+
+        // For bloc messages, check membership (lazy — just include if startsWith bloc_)
+        if (!isGlobal && !isDM && !isBloc) return;
+
+        // Build room label
+        let roomLabel = 'Committee';
+        if (msg.recipient_group === p?.committee) roomLabel = 'Global Committee';
+        else if (isDM) roomLabel = 'Direct Message';
+        else if (isBloc) roomLabel = 'Bloc Alliance';
+
+        const notif: Notification = {
+          id: `${msg.id ?? Date.now()}-${Math.random()}`,
+          sender: sender?.role === 'Delegate' ? (sender?.delegation || 'Delegate') : `${sender?.role} · ${sender?.committee}`,
+          senderRole: sender?.role || '',
+          content: msg.content,
+          room: msg.recipient_group,
+          roomLabel,
+          timestamp: new Date(),
+          read: false,
+        };
+
+        setNotifs(prev => [notif, ...prev].slice(0, 50));
+
+        // Show toast only when NOT on chat page
+        if (location.pathname !== '/chat') {
+          setToasts(prev => [notif, ...prev].slice(0, 3));
+        }
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user]);
+
+  // ── Mark notifications read when visiting chat ──
+  useEffect(() => {
+    if (onChatPage) {
+      setNotifs(prev => prev.map(n => ({ ...n, read: true })));
+    }
+  }, [onChatPage]);
+
+  // ── Outside click handlers ──
+  useEffect(() => {
+    const h = (e: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) setShowUM(false);
+      if (notifPanelRef.current && !notifPanelRef.current.contains(e.target as Node)) setShowNP(false);
+    };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+
+  const dismissToast = (id: string) => setToasts(p => p.filter(t => t.id !== id));
+
+  const sidebarW = collapsed ? 68 : 240;
+
+  return (
+    <div style={{ display:'flex', height:'100vh', width:'100vw', overflow:'hidden', background:'#F0EDE8', fontFamily:"'Manrope', sans-serif" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+
+        /* ── Nav item ── */
+        .nav-item { display:flex; align-items:center; gap:10px; padding:9px 12px; border-radius:11px; font-size:13px; font-weight:500; color:#6B6B6B; cursor:pointer; transition:all 0.13s ease; border:1px solid transparent; margin-bottom:1px; white-space:nowrap; position:relative; user-select:none; }
+        .nav-label { flex:1; overflow:hidden; text-overflow:ellipsis; transition:opacity 0.15s; }
+        .nav-item:hover { background:rgba(0,0,0,0.045); color:#1A1A1A; }
+        .nav-item.nav-active { background:rgba(240,124,0,0.11); color:#E07000; border-color:rgba(240,124,0,0.20); font-weight:700; }
+        .nav-item.nav-active .nav-icon-wrap { opacity:1; }
+        .nav-icon-wrap { display:flex; align-items:center; justify-content:center; flex-shrink:0; opacity:0.55; transition:opacity 0.13s; }
+        .nav-item:hover .nav-icon-wrap { opacity:0.85; }
+        .nav-badge { background:rgba(240,124,0,0.15); color:#E07000; font-size:10px; font-weight:800; padding:1px 6px; border-radius:99px; flex-shrink:0; }
+        .nav-chair { color:#E07000 !important; border-color:rgba(240,124,0,0.18) !important; background:rgba(240,124,0,0.06) !important; }
+        .nav-chair.nav-active { background:rgba(240,124,0,0.14) !important; border-color:rgba(240,124,0,0.28) !important; }
+
+        /* ── Sidebar toggle ── */
+        .sidebar-toggle { width:26px; height:26px; border-radius:8px; border:1px solid rgba(0,0,0,0.09); background:rgba(255,255,255,0.70); cursor:pointer; display:flex; align-items:center; justify-content:center; color:#888; transition:all 0.13s; flex-shrink:0; }
+        .sidebar-toggle:hover { background:#fff; color:#F07C00; border-color:rgba(240,124,0,0.25); }
+
+        /* ── New Bloc btn ── */
+        .new-bloc-btn { display:flex; align-items:center; justify-content:center; gap:7px; width:100%; padding:9px 12px; border-radius:11px; border:1.5px dashed rgba(240,124,0,0.35); background:rgba(240,124,0,0.05); color:#E07000; font-size:12px; font-weight:700; cursor:pointer; transition:all 0.15s; font-family:'Manrope',sans-serif; letter-spacing:0.2px; }
+        .new-bloc-btn:hover { background:rgba(240,124,0,0.10); border-color:rgba(240,124,0,0.50); box-shadow:0 2px 8px rgba(240,124,0,0.12); }
+
+        /* ── Bell button ── */
+        .bell-btn { width:32px; height:32px; border-radius:9px; border:1px solid rgba(0,0,0,0.09); background:rgba(255,255,255,0.70); cursor:pointer; display:flex; align-items:center; justify-content:center; color:#888; transition:all 0.13s; flex-shrink:0; position:relative; }
+        .bell-btn:hover { background:#fff; color:#F07C00; border-color:rgba(240,124,0,0.25); }
+        .bell-btn.has-unread { background:rgba(240,124,0,0.08); border-color:rgba(240,124,0,0.25); color:#F07C00; }
+
+        /* ── Notification panel ── */
+        .notif-panel { position:fixed; bottom:80px; left:12px; width:320px; background:rgba(255,255,255,0.97); border:1px solid rgba(0,0,0,0.09); border-radius:16px; box-shadow:0 16px 48px rgba(0,0,0,0.13),0 4px 12px rgba(0,0,0,0.06); overflow:hidden; animation:panelIn 0.18s cubic-bezier(0.34,1.3,0.64,1); z-index:600; }
+        @keyframes panelIn { from{opacity:0;transform:translateY(8px) scale(0.97)} to{opacity:1;transform:translateY(0) scale(1)} }
+
+        /* ── Notif item ── */
+        .notif-item { padding:12px 16px; cursor:pointer; transition:background 0.1s; border-bottom:1px solid rgba(0,0,0,0.05); }
+        .notif-item:last-child { border-bottom:none; }
+        .notif-item:hover { background:rgba(0,0,0,0.02); }
+        .notif-item.notif-unread { background:rgba(240,124,0,0.03); }
+        .notif-item.notif-unread:hover { background:rgba(240,124,0,0.06); }
+
+        /* ── Toast ── */
+        .toast-card { position:relative; background:rgba(255,255,255,0.97); border:1px solid rgba(0,0,0,0.09); border-radius:14px; padding:14px 14px 16px; width:300px; box-shadow:0 12px 40px rgba(0,0,0,0.13),0 4px 12px rgba(0,0,0,0.07); overflow:hidden; animation:toastIn 0.25s cubic-bezier(0.34,1.3,0.64,1); transition:transform 0.15s, opacity 0.15s; }
+        .toast-card:hover { transform:scale(1.01); }
+        @keyframes toastIn { from{opacity:0;transform:translateX(20px) scale(0.96)} to{opacity:1;transform:translateX(0) scale(1)} }
+        @keyframes toastProgress { from{width:100%} to{width:0%} }
+        .toast-progress { height:100%; background:rgba(240,124,0,0.35); border-radius:0 0 14px 14px; animation:toastProgress 5s linear forwards; }
+
+        /* ── User footer ── */
+        .user-footer { border-top:1px solid rgba(0,0,0,0.07); padding-top:12px; margin-top:12px; }
+        .user-row { display:flex; align-items:center; gap:9px; padding:8px 10px; border-radius:11px; cursor:pointer; transition:all 0.12s; border:1px solid transparent; position:relative; }
+        .user-row:hover { background:rgba(0,0,0,0.04); border-color:rgba(0,0,0,0.07); }
+        .user-avatar { width:30px; height:30px; background:linear-gradient(135deg,#F07C00,#FFAD47); border-radius:9px; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; color:#fff; flex-shrink:0; letter-spacing:0.5px; }
+        .user-menu { position:fixed; bottom:72px; left:12px; width:210px; background:rgba(255,255,255,0.97); border:1px solid rgba(0,0,0,0.09); border-radius:14px; box-shadow:0 16px 40px rgba(0,0,0,0.12),0 4px 12px rgba(0,0,0,0.06); overflow:hidden; animation:slideUp 0.15s cubic-bezier(0.34,1.3,0.64,1); z-index:700; }
+        @keyframes slideUp { from{opacity:0;transform:translateY(6px) scale(0.97)} to{opacity:1;transform:translateY(0) scale(1)} }
+        .user-menu-item { display:flex; align-items:center; gap:10px; padding:11px 14px; font-size:13px; font-weight:600; color:#3F3F46; cursor:pointer; transition:background 0.1s; font-family:'Manrope',sans-serif; }
+        .user-menu-item:hover { background:rgba(0,0,0,0.04); }
+        .user-menu-item.danger { color:#DC2626; }
+        .user-menu-item.danger:hover { background:rgba(220,38,38,0.06); }
+        .user-menu-divider { height:1px; background:rgba(0,0,0,0.07); margin:4px 0; }
+
+        /* ── Scrollbar ── */
+        ::-webkit-scrollbar { width:5px; height:5px; }
+        ::-webkit-scrollbar-track { background:transparent; }
+        ::-webkit-scrollbar-thumb { background:rgba(0,0,0,0.14); border-radius:99px; }
+        ::-webkit-scrollbar-thumb:hover { background:rgba(0,0,0,0.22); }
+      `}</style>
+
+      {/* ═══ SIDEBAR ════════════════════════════════════════════════════════════ */}
+      {user && (
+        <aside style={{ width:sidebarW, flexShrink:0, background:'rgba(255,255,255,0.78)', backdropFilter:'saturate(200%) blur(24px)', WebkitBackdropFilter:'saturate(200%) blur(24px)', borderRight:'1px solid rgba(0,0,0,0.07)', display:'flex', flexDirection:'column', padding:'20px 12px 16px', zIndex:100, transition:'width 0.22s cubic-bezier(0.4,0,0.2,1)', overflow:'visible', boxShadow:'2px 0 12px rgba(0,0,0,0.04)', minWidth:sidebarW, maxWidth:sidebarW }}>
+
+          {/* Logo + collapse */}
+          <div style={{ display:'flex', alignItems:'center', justifyContent:collapsed?'center':'space-between', marginBottom:28, paddingLeft:collapsed?0:4 }}>
+            {!collapsed && <img src={logo} alt="SODMUN" style={{ height:36, objectFit:'contain', flexShrink:0 }} />}
+            <button className="sidebar-toggle" onClick={()=>setCollapsed(c=>!c)} title={collapsed?'Expand':'Collapse'}>
+              <IconChevron dir={collapsed?'right':'left'} />
+            </button>
+          </div>
+
+          {/* Section label */}
+          {!collapsed && <p style={{ fontSize:'9.5px', fontWeight:700, textTransform:'uppercase', letterSpacing:'2.2px', color:'#BABABA', paddingLeft:12, marginBottom:6 }}>Platform</p>}
+          {collapsed  && <div style={{ height:1, background:'rgba(0,0,0,0.07)', margin:'0 4px 10px' }} />}
+
+          {/* Main nav */}
+          <nav style={{ display:'flex', flexDirection:'column', gap:0 }}>
+            <NavItem to="/"            icon={<IconDash />} label="Dashboard"      collapsed={collapsed} />
+            <NavItem to="/chat"        icon={<IconChat />} label="Communications" collapsed={collapsed} badge={unreadCount} />
+            <NavItem to="/resolutions" icon={<IconDocs />} label="Resolutions"    collapsed={collapsed} />
+            <NavItem to="/soddy"       icon={<IconBot  />} label="Soddy AI"       collapsed={collapsed} />
+            <NavItem to="/schedule"    icon={<IconCal  />} label="Schedule"       collapsed={collapsed} />
+          </nav>
+
+          {/* New Alliance btn */}
+          {!isChair && (
+            <div style={{ marginTop:16 }}>
+              {!collapsed && <div style={{ height:1, background:'rgba(0,0,0,0.07)', marginBottom:12 }} />}
+              <button className="new-bloc-btn" onClick={()=>setShowBloc(true)} title="Form a new alliance" style={{ padding:collapsed?'9px 0':undefined, gap:collapsed?0:7 }}>
+                <IconPlus />
+                {!collapsed && 'New Alliance'}
+              </button>
+            </div>
+          )}
+
+          {/* Chair section */}
+          {isChair && (
+            <div style={{ marginTop:16 }}>
+              {!collapsed && <p style={{ fontSize:'9.5px', fontWeight:700, textTransform:'uppercase', letterSpacing:'2.2px', color:'rgba(240,124,0,0.55)', paddingLeft:12, marginBottom:6 }}>Chair</p>}
+              {collapsed  && <div style={{ height:1, background:'rgba(240,124,0,0.18)', margin:'4px 4px 8px' }} />}
+              <NavItem to="/scoring" icon={<IconScore />} label="Scoring Sheet" collapsed={collapsed} isChair />
+            </div>
+          )}
+
+          <div style={{ flex:1 }} />
+
+          {/* ── Notifications + User footer ── */}
+          <div ref={notifPanelRef} style={{ position:'relative', marginBottom:8 }}>
+            {/* Notification bell row */}
+            <div style={{ display:'flex', alignItems:'center', justifyContent:collapsed?'center':'space-between', padding:'6px 4px', marginBottom:2 }}>
+              {!collapsed && (
+                <span style={{ fontSize:'9.5px', fontWeight:700, textTransform:'uppercase', letterSpacing:'2px', color:'#BABABA', paddingLeft:8 }}>Notifications</span>
+              )}
+              <button
+                className={`bell-btn ${unreadCount>0?'has-unread':''}`}
+                onClick={()=>setShowNP(v=>!v)}
+                title="Notifications"
+              >
+                <IconBell dot={unreadCount > 0} />
+                {/* Badge on bell when collapsed */}
+                {collapsed && unreadCount > 0 && (
+                  <span style={{ position:'absolute', top:3, right:3, minWidth:14, height:14, borderRadius:99, background:'#F07C00', color:'#fff', fontSize:8, fontWeight:800, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 3px', border:'1.5px solid rgba(255,255,255,0.9)' }}>
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Notification panel */}
+            {showNotifPanel && (
+              <NotifPanel
+                notifs={notifications}
+                onClose={() => setShowNP(false)}
+                onMarkAllRead={() => setNotifs(p => p.map(n => ({...n, read:true})))}
+                onClear={() => setNotifs([])}
+                onGoToRoom={(notif) => {
+                  setNotifs(p => p.map(n => n.id===notif.id ? {...n,read:true} : n));
+                  setShowNP(false);
+                  // Navigate to chat — the Chat component will handle room selection
+                  window.location.href = '/chat';
+                }}
+              />
+            )}
+          </div>
+
+          {/* User row */}
+          <div className="user-footer" ref={userMenuRef} style={{ position:'relative' }}>
+            {showUserMenu && (
+              <div className="user-menu">
+                <div style={{ padding:'14px 14px 10px' }}>
+                  <p style={{ fontSize:'12px', fontWeight:700, color:'#18181B', marginBottom:2 }}>{profile?.delegation||profile?.role}</p>
+                  <p style={{ fontSize:'11px', color:'#A1A1AA', fontWeight:500 }}>{profile?.role} · {profile?.committee}</p>
+                </div>
+                <div className="user-menu-divider" />
+                {!isChair && (
+                  <>
+                    <div className="user-menu-item" onClick={()=>{ setShowBloc(true); setShowUM(false); }}><IconUsers /> New Alliance</div>
+                    <div className="user-menu-divider" />
+                  </>
+                )}
+                <div className="user-menu-item danger" onClick={()=>{ logout(); setShowUM(false); }}><IconLogout /> Sign out</div>
+              </div>
+            )}
+            <div className="user-row" onClick={()=>setShowUM(v=>!v)}>
+              <div className="user-avatar">{(profile?.delegation||profile?.role||'?').slice(0,2).toUpperCase()}</div>
+              {!collapsed && (
+                <>
+                  <div style={{ flex:1, minWidth:0, overflow:'hidden' }}>
+                    <p style={{ fontSize:'12px', fontWeight:700, color:'#27272A', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{profile?.delegation||profile?.role}</p>
+                    <p style={{ fontSize:'10px', color:'#A1A1AA', fontWeight:500, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{profile?.committee}</p>
+                  </div>
+                  <div style={{ color:'#BABABA', display:'flex', alignItems:'center', flexShrink:0 }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="5" r="1.5" fill="currentColor"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/><circle cx="12" cy="19" r="1.5" fill="currentColor"/></svg>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </aside>
+      )}
+
+      {/* ═══ MAIN ═══════════════════════════════════════════════════════════════ */}
+      <main style={{ flex:1, height:'100vh', overflowY:'auto', position:'relative', transition:'all 0.22s' }}>
+        <Routes>
+          <Route path="/login"        element={<Login />} />
+          <Route path="/"             element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+          <Route path="/chat"         element={<ProtectedRoute><Chat /></ProtectedRoute>} />
+          <Route path="/resolutions"  element={<ProtectedRoute><Resolutions /></ProtectedRoute>} />
+          <Route path="/soddy"        element={<ProtectedRoute><SoddyBot /></ProtectedRoute>} />
+          <Route path="/schedule"     element={<ProtectedRoute><Schedule /></ProtectedRoute>} />
+          <Route path="/scoring"      element={<ProtectedRoute><ChairRoute role={role} roleLoading={roleLoading}><Scoring /></ChairRoute></ProtectedRoute>} />
+        </Routes>
+      </main>
+
+      {/* ═══ TOASTS ══════════════════════════════════════════════════════════════ */}
+      <div style={{ position:'fixed', bottom:24, right:24, zIndex:3000, display:'flex', flexDirection:'column', gap:10, pointerEvents:'none' }}>
+        {toasts.map(t => (
+          <div key={t.id} style={{ pointerEvents:'all' }}>
+            <Toast
+              notif={t}
+              onDismiss={() => dismissToast(t.id)}
+              onGo={() => {
+                setNotifs(p => p.map(n => n.id===t.id ? {...n,read:true} : n));
+                dismissToast(t.id);
+                window.location.href = '/chat';
+              }}
+            />
+          </div>
+        ))}
+      </div>
+
+      {/* ═══ NEW BLOC MODAL ══════════════════════════════════════════════════════ */}
+      {showBloc && profile && <NewBlocModal onClose={()=>setShowBloc(false)} profile={profile} authUser={user} />}
+    </div>
+  );
+};
+
+// ─── ROOT ─────────────────────────────────────────────────────────────────────
 export default function App() {
   return (
     <Router>

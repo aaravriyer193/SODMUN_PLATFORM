@@ -149,7 +149,7 @@ export default function Dashboard() {
       {/* Stats */}
       <div style={{ display:'grid', gridTemplateColumns: isChair ? 'repeat(4,1fr)' : 'repeat(3,1fr)', gap:'16px', marginBottom:'28px' }}>
         <div className="dash-stat-card">
-          <p style={{ fontSize:'11px', fontWeight:700, textTransform:'uppercase', letterSpacing:'1.5px', color:'#A1A1AA', marginBottom:'8px' }}>Alliances</p>
+          <p style={{ fontSize:'11px', fontWeight:700, textTransform:'uppercase', letterSpacing:'1.5px', color:'#A1A1AA', marginBottom:'8px' }}>Blocs</p>
           <p style={{ fontSize:'28px', fontWeight:800, color:'#18181B', letterSpacing:'-1px' }}>{blocs.length}</p>
         </div>
         <div className="dash-stat-card">
@@ -224,7 +224,7 @@ export default function Dashboard() {
                 {b.name}
               </div>
             ))}
-            {blocs.length === 0 && <p style={{ color:'#A1A1AA', fontSize:'13px' }}>No alliances yet</p>}
+            {blocs.length === 0 && <p style={{ color:'#A1A1AA', fontSize:'13px' }}>No blocs yet</p>}
           </div>
 
           <div className="panel">

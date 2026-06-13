@@ -248,11 +248,11 @@ export default function Chat() {
           </div>
 
           <div className="sec-header" style={{ marginTop:'20px' }}>
-            <span className="sec-label">Blocs</span>
+            <span className="sec-label">Bloc Alliances</span>
             {!isChair && <button className="plus-btn-sm" onClick={() => setIsBlocModal(true)}><IconPlus /></button>}
           </div>
           <div style={{ maxHeight:'180px', overflowY:'auto' }}>
-            {channels.blocs.length === 0 && <p style={{ fontSize:12, color:'#C4C4C4', padding:'4px 4px 8px', fontWeight:500 }}>No blocs yet</p>}
+            {channels.blocs.length === 0 && <p style={{ fontSize:12, color:'#C4C4C4', padding:'4px 4px 8px', fontWeight:500 }}>No alliances yet</p>}
             {channels.blocs.map((b: any) => (
               <div key={b.id} className={`ch-btn ${activeRoom === `bloc_${b.id}` ? 'active' : 'inactive'}`} onClick={() => switchRoom(`bloc_${b.id}`, b.name)}>
                 <span style={{ opacity:0.7 }}><IconLock /></span>
@@ -349,7 +349,7 @@ export default function Chat() {
       {isBlocModal && (
         <div className="overlay">
           <div className="modal">
-            <h2>Form an Bloc</h2>
+            <h2>Form a Bloc</h2>
             <input className="dark-input" value={newBlocName} onChange={e => setNewBlocName(e.target.value)} placeholder="Bloc name…" />
             <div style={{ maxHeight:'160px', overflowY:'auto', border:'1px solid rgba(0,0,0,0.08)', borderRadius:'12px', overflow:'hidden', marginBottom:'14px' }}>
               {committeeUsers.filter((u: any) => u.role === 'Delegate' && u.id !== authUser?.id).map((u: any) => (

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './api';
 import { useAuth } from './AuthContext';
-import { chairGetSidebar, chairGetRoomMessages } from './chairApi';
+import { chairGetSidebar, chairGetRoomMessages, bustSidebarCache, appendToRoomCache } from './chairApi';
 
 const IconGlobe   = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>;
 const IconLock    = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>;
@@ -24,8 +24,9 @@ export default function Chat() {
   const [isBlocModal, setIsBlocModal]       = useState(false);
   const [newBlocName, setNewBlocName]       = useState('');
   const [selectedUsers, setSelectedUsers]   = useState<string[]>([]);
-  const scrollRef    = useRef<HTMLDivElement>(null);
-  const activeRoomRef = useRef(activeRoom);
+  const scrollRef      = useRef<HTMLDivElement>(null);
+  const activeRoomRef  = useRef(activeRoom);
+  const knownDMRooms   = useRef<Set<string>>(new Set());
 
   useEffect(() => { activeRoomRef.current = activeRoom; }, [activeRoom]);
   useEffect(() => { if (authUser) initializeChat(); }, [authUser]);
@@ -52,6 +53,8 @@ export default function Chat() {
         const result = await chairGetSidebar();
         setCommitteeUsers(result.committeeUsers || []);
         setChannels({ blocs: result.blocs || [], dms: result.dms || [] });
+        // Seed known DM rooms so real-time doesn't re-fetch for existing ones
+        (result.dms || []).forEach((dm: any) => knownDMRooms.current.add(dm.roomId));
       } catch (err) {
         console.error('chairGetSidebar failed:', err);
       }
@@ -116,14 +119,19 @@ export default function Chat() {
         // For chairs: we re-fetch the room via the Edge Function when any new
         // message arrives in the currently-open room (even if RT didn't deliver it).
         if (isChair) {
-          if (payload.new.recipient_group === activeRoomRef.current) {
-            // Re-fetch room messages so we get it via the function
-            const result = await chairGetRoomMessages(activeRoomRef.current);
-            setMessages(result.messages || []);
+          const rg = payload.new.recipient_group;
+          if (rg === activeRoomRef.current) {
+            // Fetch sender profile then append — no full re-fetch
+            const { data: sender } = await supabase.from('users').select('*').eq('id', payload.new.sender_id).single();
+            const msg = { ...payload.new, users: sender };
+            setMessages(prev => [...prev, msg]);
+            appendToRoomCache(rg, msg);
             scrollToBottom();
           }
-          // Refresh sidebar so new DM rooms appear
-          if (payload.new.recipient_group?.startsWith('dm_')) {
+          // Only bust sidebar if this is a DM room we haven't seen before
+          if (rg?.startsWith('dm_') && !knownDMRooms.current.has(rg)) {
+            knownDMRooms.current.add(rg);
+            bustSidebarCache();
             refreshSidebar();
           }
           return;
@@ -135,7 +143,11 @@ export default function Chat() {
           setMessages(prev => [...prev, { ...payload.new, users: sender }]);
           scrollToBottom();
         }
-        if (payload.new.recipient_group?.startsWith('dm_')) refreshSidebar();
+        // Only refresh sidebar for new DM rooms the delegate hasn't seen
+        if (payload.new.recipient_group?.startsWith('dm_') && !knownDMRooms.current.has(payload.new.recipient_group)) {
+          knownDMRooms.current.add(payload.new.recipient_group);
+          refreshSidebar();
+        }
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -171,6 +183,7 @@ export default function Chat() {
       await supabase.from('bloc_members').insert(
         [authUser?.id, ...selectedUsers].map(uid => ({ user_id: uid, bloc_id: bloc.id }))
       );
+      bustSidebarCache();
       await refreshSidebar();
       setIsBlocModal(false); setNewBlocName(''); setSelectedUsers([]);
       switchRoom(`bloc_${bloc.id}`, bloc.name);
@@ -235,11 +248,11 @@ export default function Chat() {
           </div>
 
           <div className="sec-header" style={{ marginTop:'20px' }}>
-            <span className="sec-label">Bloc Grp Chats</span>
+            <span className="sec-label">Bloc Alliances</span>
             {!isChair && <button className="plus-btn-sm" onClick={() => setIsBlocModal(true)}><IconPlus /></button>}
           </div>
           <div style={{ maxHeight:'180px', overflowY:'auto' }}>
-            {channels.blocs.length === 0 && <p style={{ fontSize:12, color:'#C4C4C4', padding:'4px 4px 8px', fontWeight:500 }}>No blocs yet</p>}
+            {channels.blocs.length === 0 && <p style={{ fontSize:12, color:'#C4C4C4', padding:'4px 4px 8px', fontWeight:500 }}>No alliances yet</p>}
             {channels.blocs.map((b: any) => (
               <div key={b.id} className={`ch-btn ${activeRoom === `bloc_${b.id}` ? 'active' : 'inactive'}`} onClick={() => switchRoom(`bloc_${b.id}`, b.name)}>
                 <span style={{ opacity:0.7 }}><IconLock /></span>
@@ -336,8 +349,8 @@ export default function Chat() {
       {isBlocModal && (
         <div className="overlay">
           <div className="modal">
-            <h2>Form a bloc</h2>
-            <input className="dark-input" value={newBlocName} onChange={e => setNewBlocName(e.target.value)} placeholder="Bloc name…" />
+            <h2>Form an Alliance</h2>
+            <input className="dark-input" value={newBlocName} onChange={e => setNewBlocName(e.target.value)} placeholder="Alliance name…" />
             <div style={{ maxHeight:'160px', overflowY:'auto', border:'1px solid rgba(0,0,0,0.08)', borderRadius:'12px', overflow:'hidden', marginBottom:'14px' }}>
               {committeeUsers.filter((u: any) => u.role === 'Delegate' && u.id !== authUser?.id).map((u: any) => (
                 <div key={u.id}
@@ -352,7 +365,7 @@ export default function Chat() {
               ))}
             </div>
             <div style={{ display:'flex', gap:'10px' }}>
-              <button className="primary-btn" style={{ flex:1, height:'44px' }} onClick={handleCreateBloc}>Create</button>
+              <button className="primary-btn" style={{ flex:1, height:'44px' }} onClick={handleCreateBloc}>Initialize</button>
               <button className="logout-btn" style={{ flex:1, height:'44px', marginTop:0 }} onClick={() => { setIsBlocModal(false); setNewBlocName(''); setSelectedUsers([]); }}>Cancel</button>
             </div>
           </div>

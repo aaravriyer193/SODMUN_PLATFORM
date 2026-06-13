@@ -57,19 +57,32 @@ const CircleProgress = ({ ratio, overtime }: { ratio: number; overtime: boolean 
 
 // ─── PRESET TIMES ─────────────────────────────────────────────────────────────
 const PRESETS = [
-  { label: '30',  value: 30 },
+  { label: '30s', value: 30 },
+  { label: '1m',  value: 60 },
   { label: '90s', value: 90 },
+  { label: '2m',  value: 120 },
+  { label: '3m',  value: 180 },
 ];
 
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 export default function SpeakersTimer() {
-  const [delegates, setDelegates]   = useState<Delegate[]>([]);
+  const [delegates, setDelegates]   = useState<Delegate[]>(() => {
+    try { return JSON.parse(localStorage.getItem('gsl_delegates') || '[]'); } catch { return []; }
+  });
   const [newName, setNewName]       = useState('');
-  const [duration, setDuration]     = useState(90); // default 90s
+  const [duration, setDuration]     = useState<number>(() => {
+    const v = parseInt(localStorage.getItem('gsl_duration') || '90', 10);
+    return isNaN(v) ? 90 : v;
+  });
   const [customInput, setCustomInput] = useState('');
-  const [timeLeft, setTimeLeft]     = useState(90);
+  const [timeLeft, setTimeLeft]     = useState<number>(() => {
+    const v = parseInt(localStorage.getItem('gsl_duration') || '90', 10);
+    return isNaN(v) ? 90 : v;
+  });
   const [running, setRunning]       = useState(false);
-  const [activeId, setActiveId]     = useState<string | null>(null);
+  const [activeId, setActiveId]     = useState<string | null>(() =>
+    localStorage.getItem('gsl_activeId') ?? null
+  );
   const [editingId, setEditingId]   = useState<string | null>(null);
   const [editVal, setEditVal]       = useState('');
   const [pulse, setPulse]           = useState(false);
@@ -106,6 +119,18 @@ export default function SpeakersTimer() {
       return () => clearTimeout(t);
     }
   }, [pulse]);
+
+  // ── Persist to localStorage ──
+  useEffect(() => {
+    localStorage.setItem('gsl_delegates', JSON.stringify(delegates));
+  }, [delegates]);
+  useEffect(() => {
+    localStorage.setItem('gsl_duration', String(duration));
+  }, [duration]);
+  useEffect(() => {
+    if (activeId) localStorage.setItem('gsl_activeId', activeId);
+    else localStorage.removeItem('gsl_activeId');
+  }, [activeId]);
 
   // ── Set active speaker ──
   const setActiveSpeaker = (id: string) => {
@@ -569,14 +594,13 @@ export default function SpeakersTimer() {
               </button>
             ))}
             {/* Custom */}
-            <div style={{ display: 'flex', gap: 5,}}>
+            <div style={{ display: 'flex', gap: 5 }}>
               <input
                 className="custom-time-input"
                 value={customInput}
                 onChange={e => setCustomInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && applyCustom()}
                 placeholder="mm:ss"
-                style={{ height: 50,}}
               />
               <button
                 className="preset-chip"

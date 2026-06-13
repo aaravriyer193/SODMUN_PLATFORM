@@ -88,7 +88,7 @@ export default function SoddyBot() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
               <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#22C55E' }} />
               <span style={{ fontSize: '12px', color: '#71717A', fontWeight: 500 }}>
-                {profile ? `Connected to ${profile.delegation} Terminal` : 'Authenticating…'}
+                {profile ? `Connected` : 'Loading…'}
               </span>
             </div>
           </div>

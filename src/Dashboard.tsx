@@ -208,11 +208,6 @@ export default function Dashboard() {
                 <span>Speakers Timer</span>
                 <span style={{ marginLeft:'auto', color:'#F07C00' }}><IconArrow /></span>
               </div>
-              <div className="side-card" onClick={() => navigate('/scoring')}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
-                <span>Scoring Sheet</span>
-                <span style={{ marginLeft:'auto', color:'#A1A1AA' }}><IconArrow /></span>
-              </div>
               <div className="side-card" onClick={() => navigate('/chat')}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                 <span>All Messages</span>

@@ -9,6 +9,10 @@ import Resolutions from './Resolutions';
 import SoddyBot from './SoddyBot';
 import Schedule from './Schedule';
 import SpeakersTimer from './SpeakersTimer';
+import SetPassword    from './auth-pages/SetPassword';
+import ForgotPassword from './auth-pages/ForgotPassword';
+import ResetPassword  from './auth-pages/ResetPassword';
+import Onboarding     from './auth-pages/Onboarding';
 import Loader from './Loader';
 import logo from './assets/logo.png';
 
@@ -254,7 +258,7 @@ const NewBlocModal = ({ onClose, profile, authUser }: { onClose: ()=>void; profi
         <div style={{ padding:'24px 24px 0', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
           <div>
             <p style={{ fontSize:'10px', fontWeight:700, textTransform:'uppercase', letterSpacing:'2px', color:'#F07C00', marginBottom:4 }}>{step==='name'?'Step 1 of 2':'Step 2 of 2'}</p>
-            <h2 style={{ fontSize:'18px', fontWeight:800, color:'#18181B', letterSpacing:'-0.5px', margin:0 }}>{done?'✓ Bloc Formed':step==='name'?'Name your Bloc':'Add Delegates'}</h2>
+            <h2 style={{ fontSize:'18px', fontWeight:800, color:'#18181B', letterSpacing:'-0.5px', margin:0 }}>{done?'✓ Bloc Formed':step==='name'?'New Bloc Group Chat':'Add Delegates'}</h2>
           </div>
           <button onClick={onClose} style={{ width:32, height:32, borderRadius:10, border:'1px solid rgba(0,0,0,0.09)', background:'rgba(0,0,0,0.03)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'#71717A' }}><IconClose /></button>
         </div>
@@ -495,7 +499,7 @@ const AppShell = () => {
               {!collapsed && <div style={{ height:1, background:'rgba(0,0,0,0.07)', marginBottom:12 }} />}
               <button className="new-bloc-btn" onClick={()=>setShowBloc(true)} title="Form a new alliance" style={{ padding:collapsed?'9px 0':undefined, gap:collapsed?0:7 }}>
                 <IconPlus />
-                {!collapsed && 'New Bloc'}
+                {!collapsed && 'New Bloc Group Chat'}
               </button>
             </div>
           )}
@@ -557,7 +561,7 @@ const AppShell = () => {
                 <div className="user-menu-divider" />
                 {!isChair && (
                   <>
-                    <div className="user-menu-item" onClick={()=>{ setShowBloc(true); setShowUM(false); }}><IconUsers /> New Bloc</div>
+                    <div className="user-menu-item" onClick={()=>{ setShowBloc(true); setShowUM(false); }}><IconUsers /> New Bloc Group Chat</div>
                     <div className="user-menu-divider" />
                   </>
                 )}
@@ -623,7 +627,15 @@ export default function App() {
   return (
     <Router>
       <AuthProvider>
-        <AppShell />
+        <Routes>
+          {/* ── Bare auth routes — completely isolated, no AppShell ── */}
+          <Route path="/set-password" element={<SetPassword />} />
+          <Route path="/forgot"       element={<ForgotPassword />} />
+          <Route path="/reset"        element={<ResetPassword />} />
+          <Route path="/welcome"      element={<Onboarding />} />
+          {/* ── Everything else goes through AppShell ── */}
+          <Route path="/*"            element={<AppShell />} />
+        </Routes>
       </AuthProvider>
     </Router>
   );

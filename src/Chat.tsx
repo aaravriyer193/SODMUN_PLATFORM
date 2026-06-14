@@ -214,7 +214,7 @@ export default function Chat() {
         .msg-wrap.me { align-self:flex-end; align-items:flex-end; }
         .msg-wrap.them { align-self:flex-start; align-items:flex-start; }
         .msg-sender { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px; color:#A1A1AA; }
-        .msg-bubble { padding:10px 16px; border-radius:14px; font-size:14px; line-height:1.5; font-family:'Manrope',sans-serif; }
+        .msg-bubble { padding:10px 16px; border-radius:14px; font-size:14px; line-height:1.5; font-family:'Manrope',sans-serif; word-break:break-word; overflow-wrap:break-word; }
         .me .msg-bubble { background:#F07C00; color:#fff; border-bottom-right-radius:4px; box-shadow:0 2px 8px rgba(240,124,0,0.20); }
         .them .msg-bubble { background:#fff; color:#18181B; border-bottom-left-radius:4px; border:1px solid rgba(0,0,0,0.08); box-shadow:0 1px 4px rgba(0,0,0,0.04); }
         .plus-btn-sm { width:24px; height:24px; background:rgba(240,124,0,0.10); border:1px solid rgba(240,124,0,0.22); color:#F07C00; border-radius:6px; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:all 0.12s; }
@@ -248,11 +248,11 @@ export default function Chat() {
           </div>
 
           <div className="sec-header" style={{ marginTop:'20px' }}>
-            <span className="sec-label">Bloc Alliances</span>
+            <span className="sec-label">Bloc Group Chats</span>
             {!isChair && <button className="plus-btn-sm" onClick={() => setIsBlocModal(true)}><IconPlus /></button>}
           </div>
           <div style={{ maxHeight:'180px', overflowY:'auto' }}>
-            {channels.blocs.length === 0 && <p style={{ fontSize:12, color:'#C4C4C4', padding:'4px 4px 8px', fontWeight:500 }}>No alliances yet</p>}
+            {channels.blocs.length === 0 && <p style={{ fontSize:12, color:'#C4C4C4', padding:'4px 4px 8px', fontWeight:500 }}>No blocs yet</p>}
             {channels.blocs.map((b: any) => (
               <div key={b.id} className={`ch-btn ${activeRoom === `bloc_${b.id}` ? 'active' : 'inactive'}`} onClick={() => switchRoom(`bloc_${b.id}`, b.name)}>
                 <span style={{ opacity:0.7 }}><IconLock /></span>
@@ -349,7 +349,7 @@ export default function Chat() {
       {isBlocModal && (
         <div className="overlay">
           <div className="modal">
-            <h2>Form a Bloc</h2>
+            <h2>New Bloc Group Chat</h2>
             <input className="dark-input" value={newBlocName} onChange={e => setNewBlocName(e.target.value)} placeholder="Bloc name…" />
             <div style={{ maxHeight:'160px', overflowY:'auto', border:'1px solid rgba(0,0,0,0.08)', borderRadius:'12px', overflow:'hidden', marginBottom:'14px' }}>
               {committeeUsers.filter((u: any) => u.role === 'Delegate' && u.id !== authUser?.id).map((u: any) => (

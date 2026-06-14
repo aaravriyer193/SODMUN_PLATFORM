@@ -39,7 +39,7 @@ const STEPS: Step[] = [
   },
   {
     tag:   '04 — Ready',
-    title: <>You\'re all <span style={{ color:'#F07C00' }}>set</span></>,
+    title: <>You're all <span style={{ color:'#F07C00' }}>set</span></>,
     body:  'If you ever forget your password, go to app.sodmun.com/forgot — you\'ll get a reset link by email. Good luck in committee.',
     cta:   'Enter the platform',
     visual: <ReadyVisual />,
@@ -139,9 +139,9 @@ function ChatVisual() {
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:8, width:'100%', maxWidth:320 }}>
       {[
-        { label:'Global Committee', icon:'🌐', active:true },
-        { label:'Bloc Group Chats', icon:'🔒', active:false },
-        { label:'Direct Messages',  icon:'💬', active:false },
+        { label:'Global Committee', icon:'', active:true },
+        { label:'Bloc Group Chats', icon:'', active:false },
+        { label:'Direct Messages',  icon:'', active:false },
       ].map(r => (
         <div key={r.label} style={{
           display:'flex', alignItems:'center', gap:10,

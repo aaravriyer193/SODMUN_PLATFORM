@@ -31,6 +31,7 @@ export default function CommitteeManager() {
   const [filterBloc, setFilterBloc] = useState<string>('all');
   const [lockedRooms, setLockedRooms] = useState<Set<string>>(new Set());
   const [lockBusy,  setLockBusy]   = useState<string | null>(null);
+  const [allBusy,   setAllBusy]    = useState(false);
   const [committee, setCommittee]  = useState<string>('');
 
   const load = useCallback(async () => {
@@ -96,6 +97,21 @@ export default function CommitteeManager() {
       });
     } catch (e) { console.error(e); }
     setLockBusy(null);
+  };
+
+  const handleToggleAll = async () => {
+    if (rooms.length === 0) return;
+    const allLocked = rooms.every(r => lockedRooms.has(r.id));
+    const targetLocked = !allLocked; // if all locked → resume all; otherwise → pause all
+    setAllBusy(true);
+    try {
+      await Promise.all(rooms.map(r => lockRoom(r.id, targetLocked)));
+      setLockedRooms(() => {
+        if (targetLocked) return new Set(rooms.map(r => r.id));
+        return new Set();
+      });
+    } catch (e) { console.error(e); }
+    setAllBusy(false);
   };
 
   // Build room list: global committee + one per bloc
@@ -283,10 +299,43 @@ export default function CommitteeManager() {
           {/* ── Channel controls ── */}
           <div className="cm-bloc-card">
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
-              <p style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'2px', color:'var(--text-secondary)' }}>
-                Chat Channels
-              </p>
-              <span style={{ fontSize:10, color:'var(--text-muted)', fontWeight:500 }}>Pause to disable messaging</span>
+              <div>
+                <p style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'2px', color:'var(--text-secondary)' }}>
+                  Chat Channels
+                </p>
+                <p style={{ fontSize:10, color:'var(--text-muted)', fontWeight:500, marginTop:2 }}>Pause to disable delegate messaging</p>
+              </div>
+              <button
+                onClick={handleToggleAll}
+                disabled={allBusy || rooms.length === 0}
+                style={{
+                  display:'flex', alignItems:'center', gap:6,
+                  fontSize:11, fontWeight:700, padding:'7px 14px', borderRadius:9,
+                  border:'1px solid', cursor: allBusy ? 'not-allowed' : 'pointer',
+                  fontFamily:'Manrope,sans-serif', transition:'all 0.15s',
+                  background: allBusy ? 'var(--bg-surface)'
+                    : rooms.every(r => lockedRooms.has(r.id)) ? 'rgba(34,197,94,0.10)'
+                    : 'rgba(220,38,38,0.08)',
+                  color: allBusy ? 'var(--text-muted)'
+                    : rooms.every(r => lockedRooms.has(r.id)) ? '#16A34A'
+                    : '#DC2626',
+                  borderColor: allBusy ? 'var(--border)'
+                    : rooms.every(r => lockedRooms.has(r.id)) ? 'rgba(34,197,94,0.25)'
+                    : 'rgba(220,38,38,0.22)',
+                  opacity: allBusy ? 0.7 : 1,
+                }}
+              >
+                {allBusy ? (
+                  <>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ animation:'spin 0.8s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.22-8.56"/></svg>
+                    {rooms.every(r => lockedRooms.has(r.id)) ? 'Resuming all…' : 'Pausing all…'}
+                  </>
+                ) : rooms.every(r => lockedRooms.has(r.id)) ? (
+                  <><IconPlay /> Resume All</>
+                ) : (
+                  <><IconPause /> Pause All</>
+                )}
+              </button>
             </div>
             {rooms.length === 0 && <p style={{ fontSize:12, color:'var(--text-muted)' }}>Loading channels…</p>}
             {rooms.map(room => {

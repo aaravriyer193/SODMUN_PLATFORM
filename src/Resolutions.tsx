@@ -203,6 +203,26 @@ export default function Resolutions() {
     return () => { window.removeEventListener('beforeunload', onUnload); onUnload(); };
   }, []);
 
+  // ── Realtime: new resolutions appear in list for all bloc members ────────────
+  useEffect(() => {
+    if (!profile) return;
+    const channel = supabase.channel('resolutions_list')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'resolutions' }, async (payload) => {
+        // Only add if it belongs to our committee / our blocs
+        const newRes = payload.new;
+        const isOurs = newRes.committee === profile.committee || myBlocs.some((b: any) => b.id === newRes.bloc_id);
+        if (!isOurs) return;
+        // Fetch with blocs join
+        const { data } = await supabase.from('resolutions').select('*, blocs(name)').eq('id', newRes.id).single();
+        if (data) setResolutions(prev => [data, ...prev.filter(r => r.id !== data.id)]);
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'resolutions' }, (payload) => {
+        setResolutions(prev => prev.map(r => r.id === payload.new.id ? { ...r, ...payload.new } : r));
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [profile, myBlocs]);
+
   // ── Realtime resolution updates ───────────────────────────────────────────────
   useEffect(() => {
     if (!activeRes) return;
@@ -257,18 +277,42 @@ export default function Resolutions() {
     const { data: userData } = await supabase.from('users').select('*').eq('id', authUser?.id).single();
     if (!userData) return;
     setProfile(userData);
+
     const { data: allBlocs } = await supabase.from('blocs').select('*').eq('committee', userData.committee);
+
     if (userData.role !== 'Delegate') {
+      // ── Chair: fetch via Edge Function to bypass RLS ──────────────────────
       setMyBlocs(allBlocs || []);
-      const { data: res } = await supabase.from('resolutions').select('*, blocs(name)').eq('committee', userData.committee).order('created_at', { ascending: false });
-      if (res) setResolutions(res);
-    } else {
-      const { data: memberOf } = await supabase.from('bloc_members').select('bloc_id').eq('user_id', authUser?.id);
-      const myIds = memberOf?.map(b => b.bloc_id) || [];
-      setMyBlocs(allBlocs?.filter(b => myIds.includes(b.id)) || []);
-      if (myIds.length > 0) {
-        const { data: res } = await supabase.from('resolutions').select('*, blocs(name)').in('bloc_id', myIds).order('created_at', { ascending: false });
+      try {
+        // Chairs can directly query by committee — RLS fix grants this
+        const { data: res } = await supabase
+          .from('resolutions')
+          .select('*, blocs(name)')
+          .eq('committee', userData.committee)
+          .order('created_at', { ascending: false });
         if (res) setResolutions(res);
+      } catch (e) {
+        console.error('Chair resolution fetch failed:', e);
+      }
+    } else {
+      // ── Delegate: fetch by bloc membership ────────────────────────────────
+      const { data: memberOf } = await supabase
+        .from('bloc_members')
+        .select('bloc_id')
+        .eq('user_id', authUser?.id);
+      const myIds = (memberOf || []).map((b: any) => b.bloc_id);
+      setMyBlocs(allBlocs?.filter(b => myIds.includes(b.id)) || []);
+
+      // After RLS fix: all bloc members can read their bloc's resolutions
+      if (myIds.length > 0) {
+        const { data: res } = await supabase
+          .from('resolutions')
+          .select('*, blocs(name)')
+          .in('bloc_id', myIds)
+          .order('created_at', { ascending: false });
+        if (res) setResolutions(res);
+      } else {
+        setResolutions([]);
       }
     }
   };

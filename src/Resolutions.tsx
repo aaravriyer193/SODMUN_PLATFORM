@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { supabase } from './api';
 import { useAuth } from './AuthContext';
 import {
   getResolutions,
+  toggleAmendments,
   submitResolution, lockResolution, unlockResolution, reopenResolution,
   saveResolutionVersion, getResolutionVersions, restoreResolutionVersion,
   submitAmendment, getAmendments, reviewAmendment,
@@ -176,6 +177,11 @@ export default function Resolutions() {
   const [amendMode, setAmendMode]       = useState<AmendMode>(null);
   const [amendDraft, setAmendDraft]     = useState({ blockId:'', charStart:0, charEnd:0, originalText:'', proposedText:'' });
   const [amendInput, setAmendInput]     = useState('');
+  // Floating selection toolbar
+  const [selectionToolbar, setSelectionToolbar] = useState<{ x:number; y:number } | null>(null);
+  const [selectionData, setSelectionData] = useState<{ blockId:string; charStart:number; charEnd:number; text:string } | null>(null);
+  const [amendPopup, setAmendPopup]     = useState<{ x:number; y:number; type:AmendType } | null>(null);
+  const [amendSubmitting, setAmendSubmitting] = useState(false);
 
   // Presence (cursors)
   const [presences, setPresences]       = useState<any[]>([]);
@@ -231,10 +237,10 @@ export default function Resolutions() {
       .on('postgres_changes', { event:'UPDATE', schema:'public', table:'resolutions', filter:`id=eq.${activeRes.id}` }, (payload) => {
         try {
           if (payload.new.title !== activeRes.title) {
-            setActiveRes((p: any) => ({ ...p, title: payload.new.title, status: payload.new.status }));
+            setActiveRes((p: any) => ({ ...p, title: payload.new.title, status: payload.new.status, amendments_open: payload.new.amendments_open }));
             setResolutions(prev => prev.map(r => r.id === activeRes.id ? { ...r, title: payload.new.title, status: payload.new.status } : r));
           } else {
-            setActiveRes((p: any) => ({ ...p, status: payload.new.status }));
+            setActiveRes((p: any) => ({ ...p, status: payload.new.status, amendments_open: payload.new.amendments_open }));
           }
           const inc = typeof payload.new.content === 'string' ? JSON.parse(payload.new.content) : payload.new.content;
           if (Array.isArray(inc) && JSON.stringify(inc) !== JSON.stringify(blocks)) setBlocks(inc);
@@ -462,38 +468,85 @@ export default function Resolutions() {
     } catch (e) { console.error(e); }
   };
 
-  const startAmendMode = (type: AmendType) => {
-    setAmendMode(type);
-    setAmendInput('');
-    setAmendDraft({ blockId:'', charStart:0, charEnd:0, originalText:'', proposedText:'' });
-    // Listen for selection
-  };
+  // ── Selection detection: show floating toolbar on text select ──────────────
+  const handleDocumentMouseUp = useCallback((e: MouseEvent) => {
+    // Don't trigger if clicking inside the popup itself
+    if ((e.target as HTMLElement).closest('.amend-popup')) return;
+    setTimeout(() => {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.toString().trim()) {
+        setSelectionToolbar(null);
+        return;
+      }
+      // Only trigger if selection is inside the document paper
+      const range = sel.getRangeAt(0);
+      const container = range.commonAncestorContainer as HTMLElement;
+      const paper = document.getElementById('resolution-paper');
+      if (!paper?.contains(container)) { setSelectionToolbar(null); return; }
 
-  const captureSelection = () => {
+      // Find block
+      const blockEl = container.closest?.('[data-block-id]') ||
+                      container.parentElement?.closest?.('[data-block-id]');
+      const blockId = blockEl?.getAttribute('data-block-id') || '';
+      const text = sel.toString();
+      const block = blocks.find((b: any) => b.id === blockId);
+      const fullText = block?.text || '';
+      const charStart = Math.max(0, fullText.indexOf(text));
+      const charEnd   = Math.max(charStart, charStart + text.length);
+
+      setSelectionData({ blockId, charStart, charEnd, text });
+
+      // Position toolbar above selection
+      const rect = range.getBoundingClientRect();
+      setSelectionToolbar({
+        x: rect.left + rect.width / 2,
+        y: rect.top + window.scrollY,
+      });
+    }, 10);
+  }, [blocks]);
+
+  useEffect(() => {
+    document.addEventListener('mouseup', handleDocumentMouseUp);
+    return () => document.removeEventListener('mouseup', handleDocumentMouseUp);
+  }, [handleDocumentMouseUp]);
+
+  const openAmendPopup = (type: AmendType) => {
+    if (!selectionData && type !== 'add') return;
     const sel = window.getSelection();
-    if (!sel || sel.isCollapsed) return;
-    const range = sel.getRangeAt(0);
-    // Find which block this is in
-    const container = range.commonAncestorContainer;
-    const blockEl = (container as HTMLElement).closest?.('[data-block-id]') || (container as HTMLElement).parentElement?.closest('[data-block-id]');
-    const blockId = blockEl?.getAttribute('data-block-id') || '';
-    const text = sel.toString();
-    const block = blocks.find((b: any) => b.id === blockId);
-    const fullText = block?.text || '';
-    const charStart = fullText.indexOf(text);
-    const charEnd = charStart + text.length;
-    setAmendDraft({ blockId, charStart: Math.max(0, charStart), charEnd: Math.max(0, charEnd), originalText: text, proposedText: '' });
+    let rect = { left: window.innerWidth / 2, bottom: 200 };
+    if (sel && !sel.isCollapsed) {
+      const r = sel.getRangeAt(0).getBoundingClientRect();
+      rect = { left: r.left + r.width / 2, bottom: r.bottom + window.scrollY };
+    }
+    setAmendPopup({ x: rect.left, y: rect.bottom + 8, type });
+    setAmendInput('');
+    setSelectionToolbar(null);
   };
 
   const submitAmendmentDraft = async () => {
-    if (!amendDraft.blockId && amendMode !== 'add') return;
+    if (!selectionData && amendPopup?.type !== 'add') return;
+    setAmendSubmitting(true);
     try {
-      await submitAmendment(activeRes.id, amendMode!, amendDraft.blockId, amendDraft.charStart, amendDraft.charEnd, amendDraft.originalText, amendInput);
-      setAmendMode(null);
+      const sd = selectionData;
+      await submitAmendment(
+        activeRes.id,
+        amendPopup!.type,
+        sd?.blockId || '',
+        sd?.charStart ?? 0,
+        sd?.charEnd ?? 0,
+        sd?.text || '',
+        amendInput,
+      );
+      setAmendPopup(null);
       setAmendInput('');
+      setSelectionData(null);
       loadAmendments(activeRes.id);
     } catch (e) { console.error(e); }
+    setAmendSubmitting(false);
   };
+
+  const startAmendMode = (type: AmendType) => { openAmendPopup(type); };
+  const captureSelection = () => {};
 
   const handleReviewAmendment = async (id: number, status: 'approved' | 'rejected') => {
     try {
@@ -532,6 +585,15 @@ export default function Resolutions() {
     } catch (e) { console.error(e); }
   };
 
+  const handleToggleAmendments = async () => {
+    const next = !activeRes.amendments_open;
+    try {
+      await toggleAmendments(activeRes.id, next);
+      setActiveRes((p: any) => ({ ...p, amendments_open: next }));
+      setResolutions(prev => prev.map(r => r.id === activeRes.id ? { ...r, amendments_open: next } : r));
+    } catch (e) { console.error(e); }
+  };
+
   const handleReopen = async () => {
     try {
       await reopenResolution(activeRes.id);
@@ -563,14 +625,40 @@ export default function Resolutions() {
           @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
           [contenteditable]:empty:before { content:attr(data-placeholder); color:var(--text-muted); pointer-events:none; display:block; }
           [contenteditable]:focus { outline:none; }
-          .amend-panel { width:300px; flex-shrink:0; border-left:1px solid var(--border); background:var(--bg-sidebar); display:flex; flex-direction:column; overflow:hidden; }
-          .amend-item { padding:14px 16px; border-bottom:1px solid var(--border); }
-          .amend-item:last-child { border-bottom:none; }
+          .ver-panel { width:300px; flex-shrink:0; border-left:1px solid var(--border); background:var(--bg-sidebar); display:flex; flex-direction:column; overflow:hidden; }
           .ver-item { padding:12px 14px; border-bottom:1px solid var(--border); cursor:pointer; transition:background 0.1s; }
           .ver-item:hover { background:var(--bg-surface); }
           .ver-item:last-child { border-bottom:none; }
           .status-pill { font-size:10px; font-weight:800; padding:2px 8px; border-radius:99px; text-transform:uppercase; letter-spacing:1px; }
-          @media(max-width:768px) { .amend-panel { display:none; } }
+
+          /* Floating selection toolbar */
+          .sel-toolbar { position:fixed; transform:translate(-50%,-100%); margin-top:-8px; z-index:900; display:flex; gap:3px; background:var(--bg-elevated); border:1px solid var(--border); border-radius:10px; padding:5px; box-shadow:var(--shadow-lg); animation:popIn 0.12s ease; }
+          @keyframes popIn { from{opacity:0;transform:translate(-50%,-90%)} to{opacity:1;transform:translate(-50%,-100%)} }
+          .sel-btn { font-size:11px; font-weight:700; padding:5px 11px; border-radius:7px; border:1px solid transparent; cursor:pointer; font-family:Manrope,sans-serif; transition:all 0.1s; letter-spacing:0.3px; }
+          .sel-btn-add    { background:rgba(34,197,94,0.12);  color:#16A34A; border-color:rgba(34,197,94,0.25); }
+          .sel-btn-add:hover    { background:rgba(34,197,94,0.22); }
+          .sel-btn-modify { background:rgba(245,158,11,0.12); color:#B45309; border-color:rgba(245,158,11,0.25); }
+          .sel-btn-modify:hover { background:rgba(245,158,11,0.22); }
+          .sel-btn-strike { background:rgba(220,38,38,0.10);  color:#DC2626; border-color:rgba(220,38,38,0.22); }
+          .sel-btn-strike:hover { background:rgba(220,38,38,0.20); }
+
+          /* Popup input */
+          .amend-popup { position:fixed; z-index:901; background:var(--bg-elevated); border:1px solid var(--border); border-radius:14px; padding:14px; box-shadow:var(--shadow-xl); width:280px; transform:translateX(-50%); animation:popIn 0.15s ease; }
+          .amend-popup-header { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:1px; margin-bottom:10px; }
+          .amend-popup input { font-size:13px; padding:9px 12px; margin-bottom:10px; border-radius:9px; }
+          .amend-popup-btns { display:flex; gap:7px; }
+
+          /* Bottom amendment bar */
+          .amend-bar { position:fixed; bottom:0; left:0; right:0; z-index:800; background:var(--bg-elevated); border-top:1px solid var(--border); box-shadow:0 -4px 24px rgba(0,0,0,0.10); transform:translateY(100%); transition:transform 0.28s cubic-bezier(0.4,0,0.2,1); }
+          .amend-bar.open { transform:translateY(0); }
+          .amend-bar-header { display:flex; align-items:center; gap:12px; padding:10px 20px; border-bottom:1px solid var(--border); cursor:pointer; user-select:none; }
+          .amend-list { max-height:220px; overflow-y:auto; }
+          .amend-item { display:flex; align-items:flex-start; gap:10px; padding:11px 20px; border-bottom:1px solid var(--border); transition:background 0.1s; }
+          .amend-item:last-child { border-bottom:none; }
+          .amend-item:hover { background:var(--bg-surface); }
+          .amend-type-chip { font-size:9px; font-weight:800; padding:2px 7px; border-radius:99px; text-transform:uppercase; letter-spacing:0.8px; flex-shrink:0; margin-top:1px; }
+          .amend-status-chip { font-size:9px; font-weight:700; padding:2px 7px; border-radius:99px; flex-shrink:0; }
+          @media(max-width:768px) { .ver-panel { display:none; } .amend-popup { width:90vw; } }
         `}</style>
 
         {/* ── Toolbar ── */}
@@ -631,12 +719,27 @@ export default function Resolutions() {
                 <IconHistory /> History
               </button>
 
-              {/* Amendments */}
-              <button onClick={() => { setShowAmendments(v=>!v); setShowHistory(false); }} style={{ fontSize:11, padding:'6px 12px', borderRadius:8, border:'1px solid var(--border)', background: showAmendments ? 'var(--accent-soft)' : 'var(--bg-surface)', color: showAmendments ? 'var(--accent)' : 'var(--text-secondary)', cursor:'pointer', fontFamily:'Manrope,sans-serif', fontWeight:700, display:'flex', alignItems:'center', gap:5, position:'relative' }}>
-                <IconAmend /> Amendments
-                {pendingAmendments.length > 0 && <span style={{ position:'absolute', top:-4, right:-4, minWidth:16, height:16, borderRadius:99, background:'#DC2626', color:'#fff', fontSize:9, fontWeight:800, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 3px' }}>{pendingAmendments.length}</span>}
-              </button>
+              {/* Amendments — only visible when amendments are open or for chairs */}
+              {(isChair || activeRes.amendments_open) && (
+                <button onClick={() => { setShowAmendments(v=>!v); setShowHistory(false); }} style={{ fontSize:11, padding:'6px 12px', borderRadius:8, border:'1px solid var(--border)', background: showAmendments ? 'var(--accent-soft)' : 'var(--bg-surface)', color: showAmendments ? 'var(--accent)' : 'var(--text-secondary)', cursor:'pointer', fontFamily:'Manrope,sans-serif', fontWeight:700, display:'flex', alignItems:'center', gap:5, position:'relative' }}>
+                  <IconAmend /> Amendments
+                  {pendingAmendments.length > 0 && <span style={{ position:'absolute', top:-4, right:-4, minWidth:16, height:16, borderRadius:99, background:'#DC2626', color:'#fff', fontSize:9, fontWeight:800, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 3px' }}>{pendingAmendments.length}</span>}
+                </button>
+              )}
 
+              {isChair && (
+                <button
+                  onClick={handleToggleAmendments}
+                  style={{ fontSize:11, padding:'6px 12px', borderRadius:8, border:'1px solid', cursor:'pointer', fontFamily:'Manrope,sans-serif', fontWeight:700, display:'flex', alignItems:'center', gap:5,
+                    background: activeRes.amendments_open ? 'rgba(99,102,241,0.10)' : 'var(--bg-surface)',
+                    color: activeRes.amendments_open ? '#6366F1' : 'var(--text-secondary)',
+                    borderColor: activeRes.amendments_open ? 'rgba(99,102,241,0.30)' : 'var(--border)',
+                  }}
+                >
+                  <IconAmend />
+                  {activeRes.amendments_open ? 'Close Amendments' : 'Open Amendments'}
+                </button>
+              )}
               {isChair && <button className="primary-btn" style={{ fontSize:11, padding:'8px 14px' }} onClick={() => setPresentationMode(true)}>Present</button>}
             </div>
           </div>
@@ -649,7 +752,10 @@ export default function Resolutions() {
         {/* ── Status banner for delegates ── */}
         {!isChair && activeRes.status === 'submitted' && (
           <div style={{ padding:'8px 24px', background:'rgba(245,158,11,0.08)', borderBottom:'1px solid rgba(245,158,11,0.20)', fontSize:12, fontWeight:700, color:'#B45309', flexShrink:0, display:'flex', alignItems:'center', gap:8 }}>
-            <IconCheck /> Submitted for review — editing disabled. Use Amendments to propose changes.
+            <IconCheck /> Submitted for review — editing disabled.
+            {activeRes.amendments_open
+              ? ' Amendments are open — use the Amendments panel to propose changes.'
+              : ' Waiting for chair to open amendments.'}
           </div>
         )}
         {!isChair && activeRes.status === 'locked' && (
@@ -664,7 +770,7 @@ export default function Resolutions() {
           {/* Doc scroll area */}
           <div style={{ flex:1, overflowY:'auto', overflowX:'hidden', padding: presentationMode ? '60px 40px' : '40px 52px' }}>
             <div style={{ margin:'0 auto', width:'100%', maxWidth:816 }}>
-              <div style={{ background:'var(--bg-elevated)', width:'100%', borderRadius: presentationMode ? 0 : 4, padding:`clamp(24px,6vw,72px) clamp(20px,8vw,96px)`, boxShadow: presentationMode ? 'none' : 'var(--shadow-md)', border: presentationMode ? 'none' : '1px solid var(--border)', boxSizing:'border-box', overflow:'hidden' }}>
+              <div id="resolution-paper" style={{ background:'var(--bg-elevated)', width:'100%', borderRadius: presentationMode ? 0 : 4, padding:`clamp(24px,6vw,72px) clamp(20px,8vw,96px)`, boxShadow: presentationMode ? 'none' : 'var(--shadow-md)', border: presentationMode ? 'none' : '1px solid var(--border)', boxSizing:'border-box', overflow:'hidden' }}>
 
                 {/* Title */}
                 <input value={activeRes.title} onChange={e => handleTitleChange(e.target.value)} spellCheck={false}
@@ -712,7 +818,7 @@ export default function Resolutions() {
 
           {/* ── Version history panel ── */}
           {showHistory && (
-            <div className="amend-panel">
+            <div className="ver-panel">
               <div style={{ padding:'16px', borderBottom:'1px solid var(--border)', flexShrink:0 }}>
                 <p style={{ fontSize:12, fontWeight:800, color:'var(--text-primary)' }}>Version History</p>
                 <p style={{ fontSize:11, color:'var(--text-muted)', marginTop:2 }}>Click to preview, restore to apply</p>
@@ -736,96 +842,146 @@ export default function Resolutions() {
             </div>
           )}
 
-          {/* ── Amendments panel ── */}
-          {showAmendments && (
-            <div className="amend-panel">
-              <div style={{ padding:'16px', borderBottom:'1px solid var(--border)', flexShrink:0 }}>
-                <p style={{ fontSize:12, fontWeight:800, color:'var(--text-primary)', marginBottom:8 }}>Amendments</p>
-                {/* Delegate: propose amendment */}
-                {(activeRes.status === 'submitted' || isChair) && (
-                  <div style={{ display:'flex', gap:4, flexWrap:'wrap' }}>
-                    {(['add','modify','strike'] as AmendType[]).map(t => (
-                      <button key={t} onClick={() => startAmendMode(t === amendMode ? null : t)}
-                        style={{ fontSize:10, padding:'4px 10px', borderRadius:6, border:'1px solid', fontWeight:700, fontFamily:'Manrope,sans-serif', cursor:'pointer', background: amendMode===t ? 'var(--accent)' : 'var(--bg-surface)', color: amendMode===t ? '#fff' : 'var(--text-secondary)', borderColor: amendMode===t ? 'var(--accent)' : 'var(--border)', textTransform:'uppercase', letterSpacing:'0.5px' }}>
-                        {t}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+          {/* ── Floating selection toolbar ── */}
+          {selectionToolbar && (isChair || activeRes.amendments_open) && !amendPopup && (
+            <div className="sel-toolbar" style={{ left: selectionToolbar.x, top: selectionToolbar.y }}>
+              <button className="sel-btn sel-btn-add"    onClick={() => openAmendPopup('add')}>+ Add</button>
+              <button className="sel-btn sel-btn-modify" onClick={() => openAmendPopup('modify')}>~ Modify</button>
+              <button className="sel-btn sel-btn-strike" onClick={() => openAmendPopup('strike')}>✕ Strike</button>
+            </div>
+          )}
 
-              {/* Amendment draft UI */}
-              {amendMode && (
-                <div style={{ padding:'12px 14px', borderBottom:'1px solid var(--border)', background:'var(--accent-soft)' }}>
-                  <p style={{ fontSize:11, fontWeight:700, color:'var(--accent)', marginBottom:8, textTransform:'uppercase', letterSpacing:'1px' }}>
-                    {amendMode === 'add' ? 'Place cursor, then type text to add' : amendMode === 'modify' ? 'Select text in document, then type replacement' : 'Select text in document to strike'}
-                  </p>
-                  {amendMode !== 'strike' && (
-                    <input
-                      className="dark-input"
-                      style={{ margin:'0 0 8px', fontSize:12, padding:'8px 10px', minHeight:36 }}
-                      value={amendInput}
-                      onChange={e => setAmendInput(e.target.value)}
-                      placeholder={amendMode==='add' ? 'Text to insert…' : 'Replacement text…'}
-                    />
-                  )}
-                  <div style={{ display:'flex', gap:6 }}>
-                    {(amendMode === 'modify' || amendMode === 'strike') && (
-                      <button onClick={captureSelection} style={{ flex:1, fontSize:11, padding:'6px', borderRadius:7, border:'1px solid var(--accent-mid)', background:'transparent', color:'var(--accent)', cursor:'pointer', fontWeight:700, fontFamily:'Manrope,sans-serif' }}>
-                        Capture Selection
-                      </button>
-                    )}
-                    <button onClick={submitAmendmentDraft} style={{ flex:1, fontSize:11, padding:'6px', borderRadius:7, background:'var(--accent)', color:'#fff', border:'none', cursor:'pointer', fontWeight:700, fontFamily:'Manrope,sans-serif' }}>
-                      Submit
-                    </button>
-                    <button onClick={() => setAmendMode(null)} style={{ fontSize:11, padding:'6px 10px', borderRadius:7, border:'1px solid var(--border)', background:'transparent', color:'var(--text-secondary)', cursor:'pointer', fontFamily:'Manrope,sans-serif' }}>
-                      Cancel
-                    </button>
-                  </div>
-                  {amendDraft.originalText && (
-                    <p style={{ fontSize:11, marginTop:8, color:'var(--text-secondary)', background:'var(--bg-elevated)', padding:'4px 8px', borderRadius:6, border:'1px solid var(--border)', wordBreak:'break-word' }}>
-                      Selected: "{amendDraft.originalText}"
-                    </p>
-                  )}
+          {/* Hint when amendments open but nothing selected */}
+          {!isChair && activeRes.amendments_open && !selectionToolbar && !amendPopup && activeRes.status === 'submitted' && (
+            <div style={{ position:'fixed', bottom:showAmendments ? 280 : 60, left:'50%', transform:'translateX(-50%)', background:'var(--bg-elevated)', border:'1px solid var(--accent-mid)', borderRadius:99, padding:'6px 16px', fontSize:11, fontWeight:700, color:'var(--accent)', boxShadow:'var(--shadow-md)', pointerEvents:'none', whiteSpace:'nowrap', zIndex:799 }}>
+              Select text in the document to propose an amendment
+            </div>
+          )}
+
+          {/* ── Floating amendment popup (input) ── */}
+          {amendPopup && (
+            <div className="amend-popup" style={{ left: Math.min(amendPopup.x, window.innerWidth - 150), top: Math.min(amendPopup.y, window.innerHeight - 200) }}>
+              <div className="amend-popup-header" style={{
+                color: amendPopup.type==='add' ? '#16A34A' : amendPopup.type==='modify' ? '#B45309' : '#DC2626'
+              }}>
+                {amendPopup.type === 'add' ? '+ Add text' : amendPopup.type === 'modify' ? '~ Modify selection' : '✕ Strike selection'}
+              </div>
+              {selectionData?.text && (
+                <div style={{ fontSize:11, background:'var(--bg-surface)', border:'1px solid var(--border)', borderRadius:7, padding:'5px 9px', marginBottom:8, color:'var(--text-muted)', fontStyle:'italic', wordBreak:'break-word', maxHeight:48, overflow:'hidden' }}>
+                  "{selectionData.text}"
                 </div>
               )}
-
-              {/* Amendment list */}
-              <div style={{ flex:1, overflowY:'auto' }}>
-                {amendments.length === 0 && <p style={{ padding:16, fontSize:12, color:'var(--text-muted)' }}>No amendments yet.</p>}
-                {amendments.map(a => (
-                  <div key={a.id} className="amend-item">
-                    <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:6 }}>
-                      <span style={{ fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'1px', padding:'2px 7px', borderRadius:99, background:
-                        a.type==='add'?'rgba(34,197,94,0.12)':a.type==='strike'?'rgba(220,38,38,0.10)':'rgba(245,158,11,0.12)',
-                        color:a.type==='add'?'#16A34A':a.type==='strike'?'#DC2626':'#B45309'
-                      }}>{a.type}</span>
-                      <span style={{ fontSize:10, padding:'2px 7px', borderRadius:99, fontWeight:700, background:
-                        a.status==='pending'?'rgba(245,158,11,0.12)':a.status==='approved'?'rgba(34,197,94,0.12)':'rgba(220,38,38,0.10)',
-                        color:a.status==='pending'?'#B45309':a.status==='approved'?'#16A34A':'#DC2626'
-                      }}>{a.status}</span>
-                      <span style={{ fontSize:10, color:'var(--text-muted)', marginLeft:'auto' }}>{timeAgo(a.submitted_at)}</span>
-                    </div>
-                    <p style={{ fontSize:11, fontWeight:600, color:'var(--text-secondary)', marginBottom:4 }}>{a.users?.delegation || a.users?.role || 'Unknown'}</p>
-                    {a.original_text && (
-                      <p style={{ fontSize:11, color:'var(--text-muted)', textDecoration:'line-through', marginBottom:2, wordBreak:'break-word' }}>{a.original_text}</p>
-                    )}
-                    {a.proposed_text && (
-                      <p style={{ fontSize:11, color:'var(--text-primary)', wordBreak:'break-word' }}>{a.proposed_text}</p>
-                    )}
-                    {/* Chair review buttons */}
-                    {isChair && a.status === 'pending' && (
-                      <div style={{ display:'flex', gap:6, marginTop:8 }}>
-                        <button onClick={() => handleReviewAmendment(a.id, 'approved')} style={{ flex:1, fontSize:11, padding:'5px', borderRadius:7, background:'rgba(34,197,94,0.12)', color:'#16A34A', border:'1px solid rgba(34,197,94,0.25)', cursor:'pointer', fontWeight:700, fontFamily:'Manrope,sans-serif', display:'flex', alignItems:'center', justifyContent:'center', gap:4 }}><IconCheck />Approve</button>
-                        <button onClick={() => handleReviewAmendment(a.id, 'rejected')} style={{ flex:1, fontSize:11, padding:'5px', borderRadius:7, background:'rgba(220,38,38,0.08)', color:'#DC2626', border:'1px solid rgba(220,38,38,0.20)', cursor:'pointer', fontWeight:700, fontFamily:'Manrope,sans-serif', display:'flex', alignItems:'center', justifyContent:'center', gap:4 }}><IconX />Reject</button>
-                      </div>
-                    )}
-                  </div>
-                ))}
+              {amendPopup.type !== 'strike' && (
+                <input
+                  autoFocus
+                  className="dark-input"
+                  value={amendInput}
+                  onChange={e => setAmendInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitAmendmentDraft(); } if (e.key === 'Escape') { setAmendPopup(null); } }}
+                  placeholder={amendPopup.type === 'add' ? 'Text to insert here…' : 'Replacement text…'}
+                  style={{ marginBottom:10 }}
+                />
+              )}
+              {amendPopup.type === 'strike' && (
+                <p style={{ fontSize:11, color:'var(--text-muted)', marginBottom:10, lineHeight:1.5 }}>
+                  The selected text will be proposed for deletion.
+                </p>
+              )}
+              <div className="amend-popup-btns">
+                <button
+                  onClick={submitAmendmentDraft}
+                  disabled={amendSubmitting || (amendPopup.type !== 'strike' && !amendInput.trim())}
+                  style={{ flex:1, fontSize:12, fontWeight:700, padding:'8px', borderRadius:8, border:'none', cursor:'pointer', fontFamily:'Manrope,sans-serif',
+                    background: amendPopup.type==='add' ? '#16A34A' : amendPopup.type==='modify' ? '#B45309' : '#DC2626',
+                    color:'#fff', opacity: amendSubmitting ? 0.6 : 1 }}
+                >
+                  {amendSubmitting ? 'Submitting…' : 'Submit'}
+                </button>
+                <button onClick={() => { setAmendPopup(null); setAmendInput(''); }} style={{ fontSize:12, fontWeight:700, padding:'8px 14px', borderRadius:8, border:'1px solid var(--border)', background:'transparent', color:'var(--text-secondary)', cursor:'pointer', fontFamily:'Manrope,sans-serif' }}>
+                  Cancel
+                </button>
               </div>
             </div>
           )}
         </div>
+      {/* ── Bottom amendment review bar ── */}
+      {activeRes && (isChair || activeRes.amendments_open) && (
+        <div className={`amend-bar ${showAmendments ? 'open' : ''}`}>
+          {/* Drag handle / header */}
+          <div className="amend-bar-header" onClick={() => setShowAmendments(v => !v)}>
+            <div style={{ display:'flex', alignItems:'center', gap:8, flex:1 }}>
+              <IconAmend />
+              <span style={{ fontSize:12, fontWeight:800, color:'var(--text-primary)' }}>Amendments</span>
+              {pendingAmendments.length > 0 && (
+                <span style={{ fontSize:10, fontWeight:800, padding:'1px 8px', borderRadius:99, background:'rgba(220,38,38,0.12)', color:'#DC2626', border:'1px solid rgba(220,38,38,0.20)' }}>
+                  {pendingAmendments.length} pending
+                </span>
+              )}
+              {!isChair && activeRes.amendments_open && (
+                <span style={{ fontSize:10, fontWeight:700, padding:'1px 8px', borderRadius:99, background:'rgba(99,102,241,0.10)', color:'#6366F1', border:'1px solid rgba(99,102,241,0.20)' }}>
+                  Open — select text to propose
+                </span>
+              )}
+            </div>
+            <span style={{ fontSize:10, color:'var(--text-muted)', fontWeight:600 }}>
+              {showAmendments ? '▼ Hide' : '▲ Show'}
+            </span>
+          </div>
+
+          {/* Amendment list */}
+          <div className="amend-list">
+            {amendments.length === 0 && (
+              <p style={{ padding:'14px 20px', fontSize:12, color:'var(--text-muted)' }}>No amendments submitted yet.</p>
+            )}
+            {amendments.map(a => {
+              const typeColor = a.type==='add' ? { bg:'rgba(34,197,94,0.12)', c:'#16A34A' } : a.type==='strike' ? { bg:'rgba(220,38,38,0.10)', c:'#DC2626' } : { bg:'rgba(245,158,11,0.12)', c:'#B45309' };
+              const statusColor = a.status==='pending' ? { bg:'rgba(245,158,11,0.12)', c:'#B45309' } : a.status==='approved' ? { bg:'rgba(34,197,94,0.12)', c:'#16A34A' } : { bg:'rgba(220,38,38,0.10)', c:'#DC2626' };
+              return (
+                <div key={a.id} className="amend-item">
+                  {/* Type + status chips */}
+                  <div style={{ display:'flex', flexDirection:'column', gap:4, flexShrink:0, paddingTop:1 }}>
+                    <span className="amend-type-chip" style={{ background:typeColor.bg, color:typeColor.c, border:`1px solid ${typeColor.c}30` }}>{a.type}</span>
+                    <span className="amend-status-chip" style={{ background:statusColor.bg, color:statusColor.c }}>{a.status}</span>
+                  </div>
+                  {/* Content */}
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:3 }}>
+                      <span style={{ fontSize:11, fontWeight:700, color:'var(--text-secondary)' }}>
+                        {a.users?.delegation || a.users?.role || 'Unknown'}
+                      </span>
+                      <span style={{ fontSize:10, color:'var(--text-muted)' }}>{timeAgo(a.submitted_at)}</span>
+                    </div>
+                    {a.original_text && (
+                      <p style={{ fontSize:12, color:'var(--text-muted)', textDecoration: a.type==='strike' ? 'line-through' : 'none', marginBottom: a.proposed_text ? 2 : 0, wordBreak:'break-word', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:400 }}>
+                        {a.original_text}
+                      </p>
+                    )}
+                    {a.proposed_text && (
+                      <p style={{ fontSize:12, color:'var(--text-primary)', wordBreak:'break-word', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:400 }}>
+                        → {a.proposed_text}
+                      </p>
+                    )}
+                  </div>
+                  {/* Chair approve/reject */}
+                  {isChair && a.status === 'pending' && (
+                    <div style={{ display:'flex', gap:6, flexShrink:0 }}>
+                      <button onClick={() => handleReviewAmendment(a.id, 'approved')}
+                        style={{ fontSize:11, fontWeight:700, padding:'5px 12px', borderRadius:7, background:'rgba(34,197,94,0.12)', color:'#16A34A', border:'1px solid rgba(34,197,94,0.25)', cursor:'pointer', fontFamily:'Manrope,sans-serif', display:'flex', alignItems:'center', gap:4 }}>
+                        <IconCheck /> Approve
+                      </button>
+                      <button onClick={() => handleReviewAmendment(a.id, 'rejected')}
+                        style={{ fontSize:11, fontWeight:700, padding:'5px 12px', borderRadius:7, background:'rgba(220,38,38,0.08)', color:'#DC2626', border:'1px solid rgba(220,38,38,0.20)', cursor:'pointer', fontFamily:'Manrope,sans-serif', display:'flex', alignItems:'center', gap:4 }}>
+                        <IconX /> Reject
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       </div>
     );
   }

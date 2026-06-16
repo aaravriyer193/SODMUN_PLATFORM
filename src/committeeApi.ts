@@ -127,6 +127,10 @@ export async function getAmendments(resolution_id: number) {
   return call('resolution_action', { op: 'get_amendments', resolution_id });
 }
 
+export async function toggleAmendments(resolution_id: number, open: boolean) {
+  return call('resolution_action', { op: 'toggle_amendments', resolution_id, open });
+}
+
 export async function reviewAmendment(amendment_id: number, amendment_status: 'approved' | 'rejected') {
   return call('resolution_action', { op: 'review_amendment', amendment_id, amendment_status });
 }

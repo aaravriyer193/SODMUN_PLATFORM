@@ -39,7 +39,7 @@ const STEPS: Step[] = [
   },
   {
     tag:   '04 — Ready',
-    title: <>You're all <span style={{ color:'#F07C00' }}>set</span></>,
+    title: <>You\'re all <span style={{ color:'#F07C00' }}>set</span></>,
     body:  'If you ever forget your password, go to app.sodmun.com/forgot — you\'ll get a reset link by email. Good luck in committee.',
     cta:   'Enter the platform',
     visual: <ReadyVisual />,
@@ -61,7 +61,7 @@ export default function Onboarding() {
       if (user) {
         await supabase.from('users').update({ onboarded: true }).eq('id', user.id);
       }
-      window.location.href = '/';
+      window.location.href = 'https://app.sodmun.com';
       return;
     }
     setLeaving(true);

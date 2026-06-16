@@ -82,7 +82,7 @@ export default function SetPassword() {
     setStatus('done');
 
     setTimeout(() => {
-      window.location.href = '/login?welcome=true';
+      window.location.href = 'https://app.sodmun.com/login?welcome=true';
     }, 2000);
   };
 
@@ -100,7 +100,7 @@ export default function SetPassword() {
           <>
             <h1 style={styles.title}>Link expired</h1>
             <p style={styles.sub}>{errorMsg}</p>
-            <a href="/forgot" style={styles.link}>
+            <a href="https://app.sodmun.com/forgot" style={styles.link}>
               Request a new link →
             </a>
           </>

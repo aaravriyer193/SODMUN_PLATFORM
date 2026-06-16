@@ -251,7 +251,7 @@ export default function SpeakersTimer() {
   };
 
   return (
-    <div style={{ height: '100vh', display: 'flex', background: '#F0EDE8', fontFamily: "'Manrope', sans-serif", overflow: 'hidden' }}>
+    <div style={{ height: '100vh', display: 'flex', background: 'var(--bg-base)', fontFamily: "'Manrope', sans-serif", overflow: 'hidden' }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
@@ -267,7 +267,7 @@ export default function SpeakersTimer() {
 
         .preset-chip {
           padding: 6px 14px; border-radius: 99px; font-size: 12px; font-weight: 700;
-          border: 1.5px solid rgba(0,0,0,0.10); background: rgba(255,255,255,0.70);
+          border: 1.5px solid rgba(0,0,0,0.10); background: var(--bg-surface);
           color: #52525B; cursor: pointer; transition: all 0.12s; font-family: 'Manrope', sans-serif;
         }
         .preset-chip:hover { border-color: rgba(240,124,0,0.4); color: #E07000; background: rgba(240,124,0,0.06); }
@@ -280,7 +280,7 @@ export default function SpeakersTimer() {
           cursor: pointer; transition: all 0.12s;
           position: relative;
         }
-        .delegate-row:hover { background: rgba(255,255,255,0.80); border-color: rgba(0,0,0,0.07); }
+        .delegate-row:hover { background: var(--bg-elevated); border-color: rgba(0,0,0,0.07); }
         .delegate-row.is-active { background: rgba(240,124,0,0.08); border-color: rgba(240,124,0,0.25); }
         .delegate-row.is-spoken { opacity: 0.55; }
         .delegate-row.is-spoken:hover { opacity: 0.75; }
@@ -296,16 +296,16 @@ export default function SpeakersTimer() {
         .add-input {
           flex: 1; border: 1.5px solid rgba(0,0,0,0.10); border-radius: 10px;
           padding: 10px 12px; font-size: 13px; font-weight: 600;
-          font-family: 'Manrope', sans-serif; background: rgba(255,255,255,0.80);
+          font-family: 'Manrope', sans-serif; background: var(--bg-elevated);
           color: #18181B; outline: none; transition: all 0.15s;
         }
-        .add-input:focus { border-color: #F07C00; box-shadow: 0 0 0 3px rgba(240,124,0,0.10); background: #fff; }
+        .add-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(240,124,0,0.10); background: var(--bg-elevated); }
         .add-input::placeholder { color: #A1A1AA; font-weight: 500; }
 
         .custom-time-input {
           width: 80px; border: 1.5px solid rgba(0,0,0,0.10); border-radius: 8px;
           padding: 6px 10px; font-size: 12px; font-weight: 700;
-          font-family: 'JetBrains Mono', monospace; background: rgba(255,255,255,0.80);
+          font-family: 'JetBrains Mono', monospace; background: var(--bg-elevated);
           color: #18181B; outline: none; text-align: center; transition: all 0.15s;
         }
         .custom-time-input:focus { border-color: #F07C00; box-shadow: 0 0 0 2px rgba(240,124,0,0.12); }
@@ -329,8 +329,8 @@ export default function SpeakersTimer() {
       {/* ═══ LEFT PANEL — Delegate List ══════════════════════════════════════ */}
       <aside style={{
         width: 300, flexShrink: 0,
-        background: 'rgba(255,255,255,0.75)', backdropFilter: 'blur(20px)',
-        borderRight: '1px solid rgba(0,0,0,0.07)',
+        background: 'var(--bg-sidebar)', backdropFilter: 'blur(20px)',
+        borderRight: '1px solid var(--border)',
         display: 'flex', flexDirection: 'column',
         padding: '24px 16px 20px',
         boxShadow: '2px 0 12px rgba(0,0,0,0.04)',
@@ -341,7 +341,7 @@ export default function SpeakersTimer() {
           <p style={{ fontSize: '9.5px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '2.2px', color: '#F07C00', marginBottom: 4 }}>
             Speakers List
           </p>
-          <h2 style={{ fontSize: '18px', fontWeight: 800, color: '#18181B', letterSpacing: '-0.4px' }}>
+          <h2 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.4px' }}>
             Delegates
           </h2>
           {/* Stats row */}
@@ -383,7 +383,7 @@ export default function SpeakersTimer() {
           {delegates.length === 0 && (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', paddingBottom: 40 }}>
               <div style={{ fontSize: 32, marginBottom: 10, opacity: 0.3 }}>🎤</div>
-              <p style={{ fontSize: 13, color: '#A1A1AA', fontWeight: 600, textAlign: 'center' }}>No delegates yet</p>
+              <p style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 600, textAlign: 'center' }}>No delegates yet</p>
               <p style={{ fontSize: 11, color: '#C4C4C4', fontWeight: 500, textAlign: 'center', marginTop: 4 }}>Add delegation names above</p>
             </div>
           )}
@@ -394,10 +394,10 @@ export default function SpeakersTimer() {
               onClick={() => !d.spoken && setActiveSpeaker(d.id)}
             >
               {/* Grip */}
-              <span style={{ color: '#D4D4D8', flexShrink: 0, cursor: 'grab' }}><IconGrip /></span>
+              <span style={{ color: 'var(--text-muted)', flexShrink: 0, cursor: 'grab' }}><IconGrip /></span>
 
               {/* Order number */}
-              <span style={{ fontSize: 10, fontWeight: 800, color: '#D4D4D8', width: 16, textAlign: 'center', flexShrink: 0 }}>{i + 1}</span>
+              <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--text-muted)', width: 16, textAlign: 'center', flexShrink: 0 }}>{i + 1}</span>
 
               {/* Checkmark */}
               <div
@@ -416,7 +416,7 @@ export default function SpeakersTimer() {
                   onBlur={commitEdit}
                   onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') setEditingId(null); }}
                   onClick={e => e.stopPropagation()}
-                  style={{ flex: 1, border: '1.5px solid #F07C00', borderRadius: 6, padding: '3px 7px', fontSize: 13, fontWeight: 600, fontFamily: 'Manrope, sans-serif', outline: 'none', background: '#fff', color: '#18181B' }}
+                  style={{ flex: 1, border: '1.5px solid #F07C00', borderRadius: 6, padding: '3px 7px', fontSize: 13, fontWeight: 600, fontFamily: 'Manrope, sans-serif', outline: 'none', background: '#fff', color: 'var(--text-primary)' }}
                 />
               ) : (
                 <span
@@ -442,7 +442,7 @@ export default function SpeakersTimer() {
               {/* Remove btn */}
               <button
                 onClick={e => { e.stopPropagation(); removeDelegate(d.id); }}
-                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#D4D4D8', display: 'flex', alignItems: 'center', padding: 3, borderRadius: 5, transition: 'all 0.1s', flexShrink: 0 }}
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', padding: 3, borderRadius: 5, transition: 'all 0.1s', flexShrink: 0 }}
                 onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#DC2626'}
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#D4D4D8'}
                 title="Remove"
@@ -457,14 +457,14 @@ export default function SpeakersTimer() {
             <button
               className="timer-btn"
               onClick={shuffle}
-              style={{ flex: 1, padding: '9px 0', fontSize: 11, background: 'rgba(0,0,0,0.04)', color: '#71717A', border: '1px solid rgba(0,0,0,0.08)' }}
+              style={{ flex: 1, padding: '9px 0', fontSize: 11, background: 'rgba(0,0,0,0.04)', color: 'var(--text-secondary)', border: '1px solid rgba(0,0,0,0.08)' }}
             >
               <IconShuffle /> Shuffle
             </button>
             <button
               className="timer-btn"
               onClick={resetSpoken}
-              style={{ flex: 1, padding: '9px 0', fontSize: 11, background: 'rgba(0,0,0,0.04)', color: '#71717A', border: '1px solid rgba(0,0,0,0.08)' }}
+              style={{ flex: 1, padding: '9px 0', fontSize: 11, background: 'rgba(0,0,0,0.04)', color: 'var(--text-secondary)', border: '1px solid rgba(0,0,0,0.08)' }}
             >
               <IconClearAll /> Reset All
             </button>
@@ -500,13 +500,13 @@ export default function SpeakersTimer() {
               {running && (
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: overtime ? '#DC2626' : '#F07C00', display: 'block', flexShrink: 0, animation: 'liveDot 1.2s ease infinite' }} />
               )}
-              <span style={{ fontSize: 14, fontWeight: 800, color: '#18181B', letterSpacing: '-0.2px' }}>
+              <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.2px' }}>
                 {active.name}
               </span>
-              <span style={{ fontSize: 11, fontWeight: 600, color: '#A1A1AA' }}>speaking</span>
+              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>speaking</span>
             </div>
           ) : (
-            <p style={{ fontSize: 13, fontWeight: 600, color: '#A1A1AA' }}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)' }}>
               {delegates.length === 0 ? 'Add delegates to get started' : 'Select a delegate to begin'}
             </p>
           )}
@@ -520,7 +520,7 @@ export default function SpeakersTimer() {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             zIndex: 1,
             borderRadius: '50%',
-            background: 'rgba(255,255,255,0.60)',
+            background: 'var(--bg-surface)',
             boxShadow: '0 8px 32px rgba(0,0,0,0.08), 0 2px 8px rgba(0,0,0,0.04)',
           }}
         >
@@ -549,7 +549,7 @@ export default function SpeakersTimer() {
           <button
             className="timer-btn"
             onClick={resetTimer}
-            style={{ width: 44, height: 44, background: 'rgba(255,255,255,0.80)', border: '1px solid rgba(0,0,0,0.10)', color: '#71717A', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}
+            style={{ width: 44, height: 44, background: 'var(--bg-elevated)', border: '1px solid rgba(0,0,0,0.10)', color: 'var(--text-secondary)', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}
             title="Reset timer"
           ><IconReset /></button>
 
@@ -575,7 +575,7 @@ export default function SpeakersTimer() {
             className="timer-btn"
             onClick={markSpokenAndNext}
             disabled={!activeId}
-            style={{ width: 44, height: 44, background: 'rgba(255,255,255,0.80)', border: '1px solid rgba(0,0,0,0.10)', color: '#71717A', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}
+            style={{ width: 44, height: 44, background: 'var(--bg-elevated)', border: '1px solid rgba(0,0,0,0.10)', color: 'var(--text-secondary)', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}
             title="Mark spoken & next"
           ><IconNext /></button>
         </div>
@@ -615,8 +615,8 @@ export default function SpeakersTimer() {
         {delegates.length > 0 && (
           <div style={{ zIndex: 1, width: '100%', maxWidth: 360 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-              <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px', color: '#A1A1AA' }}>List Progress</span>
-              <span style={{ fontSize: 11, fontWeight: 700, color: '#27272A' }}>{spokeCount} / {delegates.length}</span>
+              <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px', color: 'var(--text-muted)' }}>List Progress</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)' }}>{spokeCount} / {delegates.length}</span>
             </div>
             <div style={{ height: 5, background: 'rgba(0,0,0,0.07)', borderRadius: 99, overflow: 'hidden' }}>
               <div style={{
@@ -630,6 +630,10 @@ export default function SpeakersTimer() {
         )}
 
         <style>{`
+          @media (max-width:768px) {
+            .timer-btn { border-radius:10px; }
+            .preset-chip { padding:5px 10px; font-size:11px; }
+          }
           @keyframes liveDot {
             0%, 100% { opacity: 1; transform: scale(1); }
             50% { opacity: 0.4; transform: scale(0.7); }

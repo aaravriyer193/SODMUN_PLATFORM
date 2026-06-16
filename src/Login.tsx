@@ -18,7 +18,7 @@ export default function Login() {
 
   // If already logged in, redirect away
   useEffect(() => {
-    if (user) window.location.href = '/';
+    if (user) window.location.href = 'https://app.sodmun.com';
   }, [user]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -45,9 +45,9 @@ export default function Login() {
       .single();
 
     if (profile?.role === 'Delegate' && !profile?.onboarded) {
-      window.location.href = '/welcome';
+      window.location.href = 'https://app.sodmun.com/welcome';
     } else {
-      window.location.href = '/';
+      window.location.href = 'https://app.sodmun.com';
     }
   };
 
@@ -107,7 +107,7 @@ export default function Login() {
           </button>
         </form>
 
-        <a href="/forgot" style={styles.forgot}>
+        <a href="https://app.sodmun.com/forgot" style={styles.forgot}>
           Forgot password?
         </a>
       </div>
@@ -118,12 +118,12 @@ export default function Login() {
 const styles: Record<string, React.CSSProperties> = {
   page: {
     minHeight: '100vh', width: '100vw',
-    background: 'linear-gradient(135deg, #F5F3EF 0%, #FEF3E6 100%)',
+    background: 'var(--bg-base)',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     fontFamily: "'Manrope', sans-serif", padding: 20,
   },
   card: {
-    background: '#fff', borderRadius: 20,
+    background: 'var(--bg-elevated)', borderRadius: 20,
     padding: '48px 44px', width: '100%', maxWidth: 400,
     boxShadow: '0 8px 40px rgba(0,0,0,0.10)',
     display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -132,7 +132,7 @@ const styles: Record<string, React.CSSProperties> = {
   logo: {
     fontFamily: "'JetBrains Mono', monospace",
     fontSize: 13, fontWeight: 700, letterSpacing: 5,
-    color: '#F07C00', marginBottom: 20, textTransform: 'uppercase' as const,
+    color: 'var(--accent)', marginBottom: 20, textTransform: 'uppercase' as const,
   },
   bar: {
     width: 36, height: 3, background: '#F07C00',
@@ -147,11 +147,11 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#16A34A', lineHeight: 1.5,
   },
   title: {
-    fontSize: 24, fontWeight: 800, color: '#18181B',
+    fontSize: 24, fontWeight: 800, color: 'var(--text-primary)',
     letterSpacing: '-0.5px', marginBottom: 4,
   },
   sub: {
-    fontSize: 12, color: '#A1A1AA', fontWeight: 600,
+    fontSize: 12, color: 'var(--text-muted)', fontWeight: 600,
     letterSpacing: '0.5px', marginBottom: 28,
   },
   form: {
@@ -159,10 +159,10 @@ const styles: Record<string, React.CSSProperties> = {
   },
   input: {
     width: '100%', padding: '13px 16px',
-    border: '1px solid rgba(0,0,0,0.12)',
+    border: '1px solid var(--border-strong)',
     borderRadius: 12, fontSize: 14, fontWeight: 500,
     fontFamily: "'Manrope', sans-serif",
-    outline: 'none', color: '#18181B', background: '#FAFAF8',
+    outline: 'none', color: 'var(--text-primary)', background: 'var(--bg-input)',
   },
   btn: {
     width: '100%', height: 48,
@@ -178,7 +178,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600, margin: '4px 0', textAlign: 'left' as const,
   },
   forgot: {
-    fontSize: 13, color: '#A1A1AA',
+    fontSize: 13, color: 'var(--text-muted)',
     fontWeight: 600, textDecoration: 'none',
     marginTop: 20, transition: 'color 0.15s',
   },

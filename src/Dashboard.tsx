@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { supabase } from './api';
 import { useAuth } from './AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { chairGetAllMessages, bustSidebarCache } from './chairApi';
+import { chairGetAllMessages, bustSidebarCache } from './committeeApi';
 
 const IconGlobe  = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>;
 const IconLock   = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>;
@@ -120,23 +120,27 @@ export default function Dashboard() {
     <div className="container">
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
-        .dash-stat-card { background:rgba(255,255,255,0.80); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); border:1px solid rgba(255,255,255,0.7); border-radius:16px; padding:20px 22px; box-shadow:0 2px 8px rgba(0,0,0,0.05); }
+        .dash-stat-card { background:var(--bg-surface); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); border:var(--glass-border); border-radius:16px; padding:20px 22px; box-shadow:var(--shadow-sm); }
         .timer-quick-card { background:linear-gradient(135deg,rgba(240,124,0,0.10) 0%,rgba(255,173,71,0.08) 100%); border:1.5px solid rgba(240,124,0,0.25); border-radius:16px; padding:18px 20px; cursor:pointer; transition:all 0.18s; position:relative; overflow:hidden; }
         .timer-quick-card:hover { background:linear-gradient(135deg,rgba(240,124,0,0.15) 0%,rgba(255,173,71,0.12) 100%); border-color:rgba(240,124,0,0.40); transform:translateY(-1px); box-shadow:0 6px 20px rgba(240,124,0,0.15); }
-        .feed-item { display:flex; gap:14px; padding:14px 0; border-bottom:1px solid rgba(0,0,0,0.06); cursor:pointer; transition:all 0.12s; }
+        .feed-item { display:flex; gap:14px; padding:14px 0; border-bottom:1px solid var(--border); cursor:pointer; transition:all 0.12s; }
         .feed-item:last-child { border-bottom:none; }
         .feed-item:hover { padding-left:4px; }
         .feed-dot { width:8px; height:8px; border-radius:50%; margin-top:6px; flex-shrink:0; }
-        .side-card { display:flex; align-items:center; gap:12px; padding:12px 14px; border-radius:12px; border:1px solid rgba(0,0,0,0.07); background:rgba(255,255,255,0.75); cursor:pointer; margin-bottom:8px; transition:all 0.15s; font-size:13px; font-weight:600; color:#27272A; }
-        .side-card:hover { border-color:rgba(240,124,0,0.30); background:rgba(255,255,255,0.95); transform:translateX(2px); }
+        .side-card { display:flex; align-items:center; gap:12px; padding:12px 14px; border-radius:12px; border:1px solid var(--border); background:var(--bg-surface); cursor:pointer; margin-bottom:8px; transition:all 0.15s; font-size:13px; font-weight:600; color:var(--text-primary); }
+        .side-card:hover { border-color:var(--accent-border); background:var(--bg-elevated); transform:translateX(2px); }
         .side-card:last-child { margin-bottom:0; }
         .channel-chip { font-size:9px; font-weight:700; padding:2px 7px; border-radius:99px; letter-spacing:0.5px; flex-shrink:0; }
+        @media (max-width:768px) {
+          .timer-quick-card { padding:14px 16px; }
+          .dash-stat-card { padding:16px 18px; }
+        }
       `}</style>
 
       {/* Header */}
       <div className="top-bar">
         <div>
-          <p style={{ fontSize:'11px', fontWeight:700, textTransform:'uppercase', letterSpacing:'2px', color:'#F07C00', marginBottom:'6px' }}>
+          <p style={{ fontSize:'11px', fontWeight:700, textTransform:'uppercase', letterSpacing:'2px', color:'var(--accent)', marginBottom:'6px' }}>
             {profile?.role} · {profile?.committee}
           </p>
           <h1 className="delegation-brand">{profile?.delegation || profile?.role}</h1>
@@ -154,15 +158,15 @@ export default function Dashboard() {
         <div className="timer-quick-card" onClick={() => navigate('/timer')}
           style={{ marginBottom:24, display:'flex', alignItems:'center', justifyContent:'space-between' }}>
           <div style={{ display:'flex', alignItems:'center', gap:14 }}>
-            <div style={{ width:40, height:40, borderRadius:12, background:'rgba(240,124,0,0.15)', border:'1.5px solid rgba(240,124,0,0.25)', display:'flex', alignItems:'center', justifyContent:'center', color:'#F07C00', flexShrink:0 }}>
+            <div style={{ width:40, height:40, borderRadius:12, background:'rgba(240,124,0,0.15)', border:'1.5px solid rgba(240,124,0,0.25)', display:'flex', alignItems:'center', justifyContent:'center', color:'var(--accent)', flexShrink:0 }}>
               <IconTimer />
             </div>
             <div>
-              <p style={{ fontSize:13, fontWeight:800, color:'#18181B', letterSpacing:'-0.2px', marginBottom:2 }}>Speakers Timer</p>
-              <p style={{ fontSize:11, fontWeight:500, color:'#71717A' }}>Manage your General Speakers List with a live countdown</p>
+              <p style={{ fontSize:13, fontWeight:800, color:'var(--text-primary)', letterSpacing:'-0.2px', marginBottom:2 }}>Speakers Timer</p>
+              <p style={{ fontSize:11, fontWeight:500, color:'var(--text-secondary)' }}>Manage your General Speakers List with a live countdown</p>
             </div>
           </div>
-          <div style={{ display:'flex', alignItems:'center', gap:6, color:'#F07C00', fontWeight:700, fontSize:12, flexShrink:0 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:6, color:'var(--accent)', fontWeight:700, fontSize:12, flexShrink:0 }}>
             Open <IconArrow />
           </div>
         </div>
@@ -171,21 +175,21 @@ export default function Dashboard() {
       {/* Stats */}
       <div style={{ display:'grid', gridTemplateColumns: isChair ? 'repeat(4,1fr)' : 'repeat(3,1fr)', gap:'16px', marginBottom:'28px' }}>
         <div className="dash-stat-card">
-          <p style={{ fontSize:'11px', fontWeight:700, textTransform:'uppercase', letterSpacing:'1.5px', color:'#A1A1AA', marginBottom:'8px' }}>Blocs</p>
-          <p style={{ fontSize:'28px', fontWeight:800, color:'#18181B', letterSpacing:'-1px' }}>{blocs.length}</p>
+          <p style={{ fontSize:'11px', fontWeight:700, textTransform:'uppercase', letterSpacing:'1.5px', color:'var(--text-muted)', marginBottom:'8px' }}>Blocs</p>
+          <p style={{ fontSize:'28px', fontWeight:800, color:'var(--text-primary)', letterSpacing:'-1px' }}>{blocs.length}</p>
         </div>
         <div className="dash-stat-card">
-          <p style={{ fontSize:'11px', fontWeight:700, textTransform:'uppercase', letterSpacing:'1.5px', color:'#A1A1AA', marginBottom:'8px' }}>Resolutions</p>
-          <p style={{ fontSize:'28px', fontWeight:800, color:'#18181B', letterSpacing:'-1px' }}>{resolutions.length}</p>
+          <p style={{ fontSize:'11px', fontWeight:700, textTransform:'uppercase', letterSpacing:'1.5px', color:'var(--text-muted)', marginBottom:'8px' }}>Resolutions</p>
+          <p style={{ fontSize:'28px', fontWeight:800, color:'var(--text-primary)', letterSpacing:'-1px' }}>{resolutions.length}</p>
         </div>
         <div className="dash-stat-card">
-          <p style={{ fontSize:'11px', fontWeight:700, textTransform:'uppercase', letterSpacing:'1.5px', color:'#A1A1AA', marginBottom:'8px' }}>Messages</p>
-          <p style={{ fontSize:'28px', fontWeight:800, color:'#18181B', letterSpacing:'-1px' }}>{messageCount ?? allChats.length}</p>
+          <p style={{ fontSize:'11px', fontWeight:700, textTransform:'uppercase', letterSpacing:'1.5px', color:'var(--text-muted)', marginBottom:'8px' }}>Messages</p>
+          <p style={{ fontSize:'28px', fontWeight:800, color:'var(--text-primary)', letterSpacing:'-1px' }}>{messageCount ?? allChats.length}</p>
         </div>
         {isChair && (
           <div className="dash-stat-card">
-            <p style={{ fontSize:'11px', fontWeight:700, textTransform:'uppercase', letterSpacing:'1.5px', color:'#A1A1AA', marginBottom:'8px' }}>Delegates</p>
-            <p style={{ fontSize:'28px', fontWeight:800, color:'#18181B', letterSpacing:'-1px' }}>{delegateCount}</p>
+            <p style={{ fontSize:'11px', fontWeight:700, textTransform:'uppercase', letterSpacing:'1.5px', color:'var(--text-muted)', marginBottom:'8px' }}>Delegates</p>
+            <p style={{ fontSize:'28px', fontWeight:800, color:'var(--text-primary)', letterSpacing:'-1px' }}>{delegateCount}</p>
           </div>
         )}
       </div>
@@ -209,13 +213,13 @@ export default function Dashboard() {
                       </span>
                       <span className="channel-chip" style={{ background:chip.bg, color:chip.color }}>{chip.label}</span>
                     </div>
-                    <p style={{ fontSize:'13px', color:'#52525B', lineHeight:1.4, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{m.content}</p>
+                    <p style={{ fontSize:'13px', color:'var(--text-secondary)', lineHeight:1.4, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{m.content}</p>
                   </div>
                 </div>
               );
             })}
             {allChats.length === 0 && (
-              <p style={{ color:'#A1A1AA', fontSize:'13px', textAlign:'center', padding:'32px 0' }}>No messages yet</p>
+              <p style={{ color:'var(--text-muted)', fontSize:'13px', textAlign:'center', padding:'32px 0' }}>No messages yet</p>
             )}
           </div>
         </div>
@@ -226,19 +230,15 @@ export default function Dashboard() {
             <div className="panel">
               <span className="label"><IconUsers /> Committee Overview</span>
               <div className="side-card" onClick={() => navigate('/timer')} style={{ borderColor:'rgba(240,124,0,0.20)', background:'rgba(240,124,0,0.04)' }}>
-                <span style={{ color:'#F07C00' }}><IconTimer /></span>
+                <span style={{ color:'var(--accent)' }}><IconTimer /></span>
                 <span>Speakers Timer</span>
-                <span style={{ marginLeft:'auto', color:'#F07C00' }}><IconArrow /></span>
+                <span style={{ marginLeft:'auto', color:'var(--accent)' }}><IconArrow /></span>
               </div>
-              <div className="side-card" onClick={() => navigate('/scoring')}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
-                <span>Scoring Sheet</span>
-                <span style={{ marginLeft:'auto', color:'#A1A1AA' }}><IconArrow /></span>
-              </div>
+
               <div className="side-card" onClick={() => navigate('/chat')}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                 <span>All Messages</span>
-                <span style={{ marginLeft:'auto', color:'#A1A1AA' }}><IconArrow /></span>
+                <span style={{ marginLeft:'auto', color:'var(--text-muted)' }}><IconArrow /></span>
               </div>
             </div>
           )}
@@ -251,18 +251,18 @@ export default function Dashboard() {
                 {b.name}
               </div>
             ))}
-            {blocs.length === 0 && <p style={{ color:'#A1A1AA', fontSize:'13px' }}>No blocs yet</p>}
+            {blocs.length === 0 && <p style={{ color:'var(--text-muted)', fontSize:'13px' }}>No blocs yet</p>}
           </div>
 
           <div className="panel">
             <span className="label"><IconFile /> {isChair ? 'Committee Drafts' : 'My Resolutions'}</span>
             {resolutions.map((r: any) => (
               <div key={r.id} className="side-card" onClick={() => navigate('/resolutions')}>
-                <span style={{ color:'#A1A1AA', flexShrink:0 }}><IconFile /></span>
+                <span style={{ color:'var(--text-muted)', flexShrink:0 }}><IconFile /></span>
                 <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.title}</span>
               </div>
             ))}
-            {resolutions.length === 0 && <p style={{ color:'#A1A1AA', fontSize:'13px' }}>No resolutions yet</p>}
+            {resolutions.length === 0 && <p style={{ color:'var(--text-muted)', fontSize:'13px' }}>No resolutions yet</p>}
           </div>
         </div>
       </div>

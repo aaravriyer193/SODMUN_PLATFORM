@@ -6,7 +6,6 @@
 import React, { useState } from 'react';
 
 const FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/forgot-password`;
-const ANON_KEY     = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 export default function ForgotPassword() {
   const [email, setEmail]   = useState('');
@@ -26,7 +25,6 @@ export default function ForgotPassword() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        apikey: ANON_KEY,
       },
       body: JSON.stringify({ email: email.trim().toLowerCase() }),
     }).catch(() => {});

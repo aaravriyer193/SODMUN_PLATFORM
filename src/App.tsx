@@ -9,6 +9,7 @@ import Resolutions from './Resolutions';
 import SoddyBot from './SoddyBot';
 import Schedule from './Schedule';
 import SpeakersTimer from './SpeakersTimer';
+import CommitteeManager from './CommitteeManager';
 import SetPassword    from './auth-pages/SetPassword';
 import ForgotPassword from './auth-pages/ForgotPassword';
 import ResetPassword  from './auth-pages/ResetPassword';
@@ -34,6 +35,7 @@ const IconChat    = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="
 const IconDocs    = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>;
 const IconBot     = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8.01" y2="16"/><line x1="16" y1="16" x2="16.01" y2="16"/></svg>;
 const IconCal     = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>;
+const IconCommittee = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
 const IconTimer   = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/><line x1="9" y1="2" x2="15" y2="2"/></svg>;
 const IconPlus    = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
 const IconLogout  = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>;
@@ -309,6 +311,14 @@ const AppShell = () => {
   const [profile, setProfile]     = useState<any>(null);
   const [roleLoading, setRL]      = useState(true);
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [isMobile, setIsMobile]     = useState(window.innerWidth <= 768);
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
   const [showBloc, setShowBloc]   = useState(false);
   const [showUserMenu, setShowUM] = useState(false);
   const [showNotifPanel, setShowNP] = useState(false);
@@ -323,6 +333,8 @@ const AppShell = () => {
   const isChair = role !== 'Delegate' && role !== null;
   const unreadCount = notifications.filter(n => !n.read).length;
   const onChatPage  = location.pathname === '/chat';
+  // Close mobile drawer on route change
+  useEffect(() => { setMobileOpen(false); }, [location.pathname]);
 
   // ── Load profile ──
   useEffect(() => {
@@ -401,7 +413,7 @@ const AppShell = () => {
   const sidebarW = collapsed ? 68 : 240;
 
   return (
-    <div style={{ display:'flex', height:'100vh', width:'100vw', overflow:'hidden', background:'#F0EDE8', fontFamily:"'Manrope', sans-serif" }}>
+    <div style={{ display:'flex', height:'100vh', width:'100vw', overflow:'hidden', background:'var(--bg-base)', fontFamily:"'Manrope', sans-serif" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
 
@@ -466,11 +478,86 @@ const AppShell = () => {
         ::-webkit-scrollbar-track { background:transparent; }
         ::-webkit-scrollbar-thumb { background:rgba(0,0,0,0.14); border-radius:99px; }
         ::-webkit-scrollbar-thumb:hover { background:rgba(0,0,0,0.22); }
+
+        /* ── Dark mode sidebar / nav ── */
+        .nav-item { color: var(--text-secondary); }
+        .nav-item:hover { background:rgba(128,128,128,0.08); color:var(--text-primary); }
+        .sidebar-toggle { background:var(--bg-elevated); border-color:var(--border); color:var(--text-muted); }
+        .sidebar-toggle:hover { background:var(--bg-card); color:var(--accent); }
+        .bell-btn { background:var(--bg-elevated); border-color:var(--border); color:var(--text-muted); }
+        .bell-btn:hover { background:var(--bg-card); color:var(--accent); }
+        .user-row:hover { background:var(--bg-surface); border-color:var(--border); }
+        .user-menu { background:var(--bg-elevated); border-color:var(--border); }
+        .user-menu-item { color:var(--text-primary); }
+        .user-menu-item:hover { background:var(--bg-surface); }
+        .user-menu-divider { background:var(--border); }
+        .notif-panel { background:var(--bg-elevated); border-color:var(--border); }
+        .notif-item:hover { background:var(--bg-surface); }
+        .toast-card { background:var(--bg-elevated); border-color:var(--border); }
+
+        /* ── Mobile overlay backdrop ── */
+        .mobile-drawer-backdrop {
+          position:fixed; inset:0; background:rgba(0,0,0,0.45);
+          backdrop-filter:blur(6px); z-index:199;
+          animation:fadeIn 0.2s ease;
+        }
+        @keyframes fadeIn { from{opacity:0} to{opacity:1} }
+
+        /* ── Mobile drawer ── */
+        .mobile-drawer {
+          position:fixed; top:0; left:0; bottom:0; width:280px;
+          background:var(--bg-sidebar);
+          backdrop-filter:saturate(200%) blur(24px);
+          -webkit-backdrop-filter:saturate(200%) blur(24px);
+          border-right:1px solid var(--border);
+          z-index:200; padding:20px 12px 16px;
+          display:flex; flex-direction:column;
+          transform:translateX(-100%);
+          transition:transform 0.28s cubic-bezier(0.4,0,0.2,1);
+          box-shadow:4px 0 24px rgba(0,0,0,0.15);
+        }
+        .mobile-drawer.open { transform:translateX(0); }
+
+        /* ── Bottom tab bar ── */
+        .bottom-tab-bar {
+          position:fixed; bottom:0; left:0; right:0; z-index:150;
+          background:var(--bg-elevated);
+          backdrop-filter:saturate(200%) blur(20px);
+          -webkit-backdrop-filter:saturate(200%) blur(20px);
+          border-top:1px solid var(--border);
+          display:flex; align-items:center;
+          padding:0 4px;
+          padding-bottom:env(safe-area-inset-bottom);
+          box-shadow:0 -4px 20px rgba(0,0,0,0.08);
+          height:60px;
+        }
+        .tab-item {
+          flex:1; display:flex; flex-direction:column;
+          align-items:center; justify-content:center;
+          gap:4px; padding:8px 4px;
+          border-radius:12px; cursor:pointer;
+          color:var(--text-muted); font-size:9px;
+          font-weight:700; text-transform:uppercase;
+          letter-spacing:0.5px; text-decoration:none;
+          transition:color 0.12s, background 0.12s;
+          position:relative;
+        }
+        .tab-item.active { color:var(--accent); }
+        .tab-item:hover  { background:var(--accent-soft); color:var(--accent); }
+        .tab-badge {
+          position:absolute; top:4px; right:calc(50% - 16px);
+          min-width:16px; height:16px; border-radius:99px;
+          background:var(--accent); color:#fff;
+          font-size:9px; font-weight:800;
+          display:flex; align-items:center; justify-content:center;
+          padding:0 4px;
+          border:1.5px solid var(--bg-elevated);
+        }
       `}</style>
 
-      {/* ═══ SIDEBAR ════════════════════════════════════════════════════════════ */}
-      {user && (
-        <aside style={{ width:sidebarW, flexShrink:0, background:'rgba(255,255,255,0.78)', backdropFilter:'saturate(200%) blur(24px)', WebkitBackdropFilter:'saturate(200%) blur(24px)', borderRight:'1px solid rgba(0,0,0,0.07)', display:'flex', flexDirection:'column', padding:'20px 12px 16px', zIndex:100, transition:'width 0.22s cubic-bezier(0.4,0,0.2,1)', overflow:'visible', boxShadow:'2px 0 12px rgba(0,0,0,0.04)', minWidth:sidebarW, maxWidth:sidebarW }}>
+      {/* ═══ SIDEBAR — desktop only ══════════════════════════════════════════════ */}
+      {user && !isMobile && (
+        <aside style={{ width:sidebarW, flexShrink:0, background:'var(--bg-sidebar)', backdropFilter:'saturate(200%) blur(24px)', WebkitBackdropFilter:'saturate(200%) blur(24px)', borderRight:'1px solid var(--border)', display:'flex', flexDirection:'column', padding:'20px 12px 16px', zIndex:100, transition:'width 0.22s cubic-bezier(0.4,0,0.2,1)', overflow:'visible', boxShadow:'2px 0 12px rgba(0,0,0,0.04)', minWidth:sidebarW, maxWidth:sidebarW }}>
 
           {/* Logo + collapse */}
           <div style={{ display:'flex', alignItems:'center', justifyContent:collapsed?'center':'space-between', marginBottom:28, paddingLeft:collapsed?0:4 }}>
@@ -509,7 +596,8 @@ const AppShell = () => {
             <div style={{ marginTop:16 }}>
               {!collapsed && <p style={{ fontSize:'9.5px', fontWeight:700, textTransform:'uppercase', letterSpacing:'2.2px', color:'rgba(240,124,0,0.55)', paddingLeft:12, marginBottom:6 }}>Chair</p>}
               {collapsed  && <div style={{ height:1, background:'rgba(240,124,0,0.18)', margin:'4px 4px 8px' }} />}
-              <NavItem to="/timer"   icon={<IconTimer />} label="Speakers Timer"  collapsed={collapsed} isChair />
+              <NavItem to="/timer"       icon={<IconTimer />}     label="Speakers Timer"  collapsed={collapsed} isChair />
+              <NavItem to="/committee"   icon={<IconCommittee />} label="Committee Mgr"  collapsed={collapsed} isChair />
             </div>
           )}
 
@@ -586,6 +674,53 @@ const AppShell = () => {
         </aside>
       )}
 
+      {/* ═══ MOBILE DRAWER ══════════════════════════════════════════════════════ */}
+      {user && isMobile && (
+        <>
+          {mobileOpen && <div className="mobile-drawer-backdrop" onClick={()=>setMobileOpen(false)} />}
+          <div className={`mobile-drawer ${mobileOpen?'open':''}`}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:28, paddingLeft:4 }}>
+              <img src={logo} alt="SODMUN" style={{ height:32, objectFit:'contain' }} />
+              <button className="sidebar-toggle" onClick={()=>setMobileOpen(false)}><IconClose /></button>
+            </div>
+            <p style={{ fontSize:'9.5px', fontWeight:700, textTransform:'uppercase', letterSpacing:'2.2px', color:'var(--text-muted)', paddingLeft:12, marginBottom:6 }}>Platform</p>
+            <nav style={{ display:'flex', flexDirection:'column', gap:0 }}>
+              <NavItem to="/"            icon={<IconDash />} label="Dashboard"      collapsed={false} />
+              <NavItem to="/chat"        icon={<IconChat />} label="Communications" collapsed={false} badge={unreadCount} />
+              <NavItem to="/resolutions" icon={<IconDocs />} label="Resolutions"    collapsed={false} />
+              <NavItem to="/soddy"       icon={<IconBot  />} label="Soddy AI"       collapsed={false} />
+              <NavItem to="/schedule"    icon={<IconCal  />} label="Schedule"       collapsed={false} />
+            </nav>
+            {!isChair && (
+              <div style={{ marginTop:16 }}>
+                <div style={{ height:1, background:'var(--border)', marginBottom:12 }} />
+                <button className="new-bloc-btn" onClick={()=>{ setShowBloc(true); setMobileOpen(false); }}>
+                  <IconPlus /> New Bloc Group Chat
+                </button>
+              </div>
+            )}
+            {isChair && (
+              <div style={{ marginTop:16 }}>
+                <p style={{ fontSize:'9.5px', fontWeight:700, textTransform:'uppercase', letterSpacing:'2.2px', color:'rgba(240,124,0,0.55)', paddingLeft:12, marginBottom:6 }}>Chair</p>
+                <NavItem to="/timer"     icon={<IconTimer />}     label="Speakers Timer" collapsed={false} isChair />
+              <NavItem to="/committee" icon={<IconCommittee />} label="Committee Mgr" collapsed={false} isChair />
+              </div>
+            )}
+            <div style={{ flex:1 }} />
+            <div style={{ borderTop:'1px solid var(--border)', paddingTop:12 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:9, padding:'8px 10px', borderRadius:11 }}>
+                <div className="user-avatar">{(profile?.delegation||profile?.role||'?').slice(0,2).toUpperCase()}</div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <p style={{ fontSize:'12px', fontWeight:700, color:'var(--text-primary)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{profile?.delegation||profile?.role}</p>
+                  <p style={{ fontSize:'10px', color:'var(--text-muted)', fontWeight:500 }}>{profile?.committee}</p>
+                </div>
+                <button onClick={logout} style={{ background:'transparent', border:'none', cursor:'pointer', color:'var(--text-muted)', display:'flex', alignItems:'center' }}><IconLogout /></button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* ═══ MAIN ═══════════════════════════════════════════════════════════════ */}
       <main style={{ flex:1, height:'100vh', overflowY:'auto', position:'relative', transition:'all 0.22s' }}>
         <Routes>
@@ -596,8 +731,31 @@ const AppShell = () => {
           <Route path="/soddy"        element={<ProtectedRoute><SoddyBot /></ProtectedRoute>} />
           <Route path="/schedule"     element={<ProtectedRoute><Schedule /></ProtectedRoute>} />
           <Route path="/timer"        element={<ProtectedRoute><ChairRoute role={role} roleLoading={roleLoading}><SpeakersTimer /></ChairRoute></ProtectedRoute>} />
+          <Route path="/committee"    element={<ProtectedRoute><ChairRoute role={role} roleLoading={roleLoading}><CommitteeManager /></ChairRoute></ProtectedRoute>} />
         </Routes>
       </main>
+
+      {/* ═══ BOTTOM TAB BAR — mobile only ════════════════════════════════════════ */}
+      {user && isMobile && (
+        <nav className="bottom-tab-bar">
+          {[
+            { to:'/',            icon:<IconDash />,  label:'Home'  },
+            { to:'/chat',        icon:<IconChat />,  label:'Chat', badge:unreadCount },
+            { to:'/resolutions', icon:<IconDocs />,  label:'Docs'  },
+            { to:'/soddy',       icon:<IconBot />,   label:'Soddy' },
+          ].map(tab => (
+            <Link key={tab.to} to={tab.to} className={`tab-item ${location.pathname===tab.to?'active':''}`}>
+              {tab.badge ? <span className="tab-badge">{tab.badge > 9 ? '9+' : tab.badge}</span> : null}
+              {tab.icon}
+              {tab.label}
+            </Link>
+          ))}
+          <div className="tab-item" onClick={()=>setMobileOpen(true)}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+            More
+          </div>
+        </nav>
+      )}
 
       {/* ═══ TOASTS ══════════════════════════════════════════════════════════════ */}
       <div style={{ position:'fixed', bottom:24, right:24, zIndex:3000, display:'flex', flexDirection:'column', gap:10, pointerEvents:'none' }}>

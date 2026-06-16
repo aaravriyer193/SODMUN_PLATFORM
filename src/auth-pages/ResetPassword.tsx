@@ -66,7 +66,7 @@ export default function ResetPassword() {
     setStatus('done');
 
     setTimeout(() => {
-      window.location.href = '/login';
+      window.location.href = 'https://app.sodmun.com/login';
     }, 2000);
   };
 
@@ -84,7 +84,7 @@ export default function ResetPassword() {
           <>
             <h1 style={styles.title}>Link expired</h1>
             <p style={styles.sub}>This reset link has expired or already been used.</p>
-            <a href="/forgot?error=expired" style={styles.link}>
+            <a href="https://app.sodmun.com/forgot?error=expired" style={styles.link}>
               Request a new link →
             </a>
           </>

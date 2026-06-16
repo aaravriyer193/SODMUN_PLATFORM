@@ -3,8 +3,14 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from './AuthContext';
-import { getCommitteeMembers, addToBlocApi, removeFromBlocApi, bustSidebarCache } from './committeeApi';
+import { getCommitteeMembers, addToBlocApi, removeFromBlocApi, bustSidebarCache, lockRoom } from './committeeApi';
+import { supabase } from './api';
 
+const IconPause  = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="6" y1="4" x2="6" y2="20"/><line x1="18" y1="4" x2="18" y2="20"/></svg>;
+const IconPlay   = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21"/></svg>;
+const IconGlobe  = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>;
+const IconLockSm = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>;
+const IconChat2  = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>;
 const IconPlus   = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
 const IconMinus  = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>;
 const IconUsers  = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
@@ -23,14 +29,25 @@ export default function CommitteeManager() {
   const [busy,      setBusy]      = useState<string | null>(null);
   const [search,    setSearch]    = useState('');
   const [filterBloc, setFilterBloc] = useState<string>('all');
+  const [lockedRooms, setLockedRooms] = useState<Set<string>>(new Set());
+  const [lockBusy,  setLockBusy]   = useState<string | null>(null);
+  const [committee, setCommittee]  = useState<string>('');
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await getCommitteeMembers();
-      setDelegates(result.users  || []);
-      setBlocs(result.blocs      || []);
-      setMembers(result.members  || []);
+      const [memberResult, { data: lockData }, { data: userData }] = await Promise.all([
+        getCommitteeMembers(),
+        supabase.from('room_locks').select('recipient_group'),
+        supabase.auth.getUser(),
+      ]);
+      setDelegates(memberResult.users  || []);
+      setBlocs(memberResult.blocs      || []);
+      setMembers(memberResult.members  || []);
+      setLockedRooms(new Set((lockData || []).map((l: any) => l.recipient_group)));
+      // Get committee from first delegate or blocs
+      const comm = memberResult.blocs?.[0]?.committee || memberResult.users?.[0]?.committee || '';
+      setCommittee(comm);
     } catch (e) { console.error(e); }
     setLoading(false);
   }, []);
@@ -67,6 +84,26 @@ export default function CommitteeManager() {
     setBusy(null);
   };
 
+  const handleToggleLock = async (roomId: string) => {
+    setLockBusy(roomId);
+    const isLocked = lockedRooms.has(roomId);
+    try {
+      await lockRoom(roomId, !isLocked);
+      setLockedRooms(prev => {
+        const next = new Set(prev);
+        if (isLocked) next.delete(roomId); else next.add(roomId);
+        return next;
+      });
+    } catch (e) { console.error(e); }
+    setLockBusy(null);
+  };
+
+  // Build room list: global committee + one per bloc
+  const rooms = [
+    { id: committee, name: 'Global Committee', type: 'global' as const },
+    ...blocs.map(b => ({ id: `bloc_${b.id}`, name: b.name, type: 'bloc' as const })),
+  ].filter(r => r.id);
+
   const filteredDelegates = delegates.filter(d => {
     const matchSearch = !search || d.delegation.toLowerCase().includes(search.toLowerCase());
     const matchBloc = filterBloc === 'all'
@@ -90,6 +127,7 @@ export default function CommitteeManager() {
         .cm-btn-rem { background:rgba(220,38,38,0.10); color:#DC2626; }
         .cm-btn-rem:hover { background:rgba(220,38,38,0.20); }
         .cm-section { margin-bottom:32px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
       `}</style>
 
       {/* Header */}
@@ -240,7 +278,65 @@ export default function CommitteeManager() {
                 </div>
               );
             })}
+            </div>
+
+          {/* ── Channel controls ── */}
+          <div className="cm-bloc-card">
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
+              <p style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'2px', color:'var(--text-secondary)' }}>
+                Chat Channels
+              </p>
+              <span style={{ fontSize:10, color:'var(--text-muted)', fontWeight:500 }}>Pause to disable messaging</span>
+            </div>
+            {rooms.length === 0 && <p style={{ fontSize:12, color:'var(--text-muted)' }}>Loading channels…</p>}
+            {rooms.map(room => {
+              const isLocked = lockedRooms.has(room.id);
+              const isBusy   = lockBusy === room.id;
+              return (
+                <div key={room.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 0', borderBottom:'1px solid var(--border)' }}>
+                  <span style={{ color: isLocked ? '#DC2626' : 'var(--accent)', flexShrink:0 }}>
+                    {room.type === 'global' ? <IconGlobe /> : <IconLockSm />}
+                  </span>
+                  <span style={{ flex:1, fontSize:13, fontWeight:600, color: isLocked ? '#DC2626' : 'var(--text-primary)' }}>
+                    {room.name}
+                  </span>
+                  {isLocked && (
+                    <span style={{ fontSize:9, fontWeight:800, textTransform:'uppercase', letterSpacing:'1px', color:'#DC2626', background:'rgba(220,38,38,0.08)', border:'1px solid rgba(220,38,38,0.20)', borderRadius:99, padding:'2px 8px' }}>
+                      Paused
+                    </span>
+                  )}
+                  <button
+                    onClick={() => handleToggleLock(room.id)}
+                    disabled={isBusy}
+                    style={{
+                      display:'flex', alignItems:'center', gap:5,
+                      fontSize:11, fontWeight:700, padding:'6px 12px', borderRadius:8,
+                      border:'1px solid', cursor: isBusy ? 'not-allowed' : 'pointer',
+                      fontFamily:'Manrope,sans-serif', transition:'all 0.15s',
+                      background: isBusy ? 'var(--bg-surface)' : isLocked ? 'rgba(34,197,94,0.10)' : 'rgba(220,38,38,0.08)',
+                      color: isBusy ? 'var(--text-muted)' : isLocked ? '#16A34A' : '#DC2626',
+                      borderColor: isBusy ? 'var(--border)' : isLocked ? 'rgba(34,197,94,0.25)' : 'rgba(220,38,38,0.22)',
+                      opacity: isBusy ? 0.7 : 1,
+                      minWidth: 90,
+                      justifyContent: 'center',
+                    }}
+                  >
+                    {isBusy ? (
+                      <>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ animation:'spin 0.8s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.22-8.56"/></svg>
+                        {isLocked ? 'Resuming…' : 'Pausing…'}
+                      </>
+                    ) : isLocked ? (
+                      <><IconPlay /> Resume</>
+                    ) : (
+                      <><IconPause /> Pause</>
+                    )}
+                  </button>
+                </div>
+              );
+            })}
           </div>
+
         </div>
       )}
     </div>

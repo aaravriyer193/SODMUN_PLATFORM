@@ -131,6 +131,12 @@ export async function reviewAmendment(amendment_id: number, amendment_status: 'a
   return call('resolution_action', { op: 'review_amendment', amendment_id, amendment_status });
 }
 
+// ── Resolutions ────────────────────────────────────────────────────────────────
+export async function getResolutions(bloc_ids?: number[]) {
+  return call('get_resolutions', bloc_ids ? { bloc_ids } : {});
+  // returns { resolutions: any[] }
+}
+
 // ── Soddy proxy ─────────────────────────────────────────────────────────────
 export async function callSoddy(messages: any[]) {
   const res = await fetch(SODDY_URL, {

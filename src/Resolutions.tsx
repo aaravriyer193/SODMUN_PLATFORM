@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from './api';
 import { useAuth } from './AuthContext';
 import {
+  getResolutions,
   submitResolution, lockResolution, unlockResolution, reopenResolution,
   saveResolutionVersion, getResolutionVersions, restoreResolutionVersion,
   submitAmendment, getAmendments, reviewAmendment,
@@ -278,39 +279,34 @@ export default function Resolutions() {
     if (!userData) return;
     setProfile(userData);
 
+    // All blocs in committee (for the "Create resolution" dropdown)
     const { data: allBlocs } = await supabase.from('blocs').select('*').eq('committee', userData.committee);
 
     if (userData.role !== 'Delegate') {
-      // ── Chair: fetch via Edge Function to bypass RLS ──────────────────────
+      // ── Chair: service role via Edge Function, sees everything ───────────
       setMyBlocs(allBlocs || []);
       try {
-        // Chairs can directly query by committee — RLS fix grants this
-        const { data: res } = await supabase
-          .from('resolutions')
-          .select('*, blocs(name)')
-          .eq('committee', userData.committee)
-          .order('created_at', { ascending: false });
-        if (res) setResolutions(res);
+        const result = await getResolutions(); // no bloc_ids = chair mode
+        setResolutions(result.resolutions || []);
       } catch (e) {
         console.error('Chair resolution fetch failed:', e);
       }
     } else {
-      // ── Delegate: fetch by bloc membership ────────────────────────────────
+      // ── Delegate: get their bloc IDs first, then fetch via Edge Function ──
       const { data: memberOf } = await supabase
         .from('bloc_members')
         .select('bloc_id')
         .eq('user_id', authUser?.id);
       const myIds = (memberOf || []).map((b: any) => b.bloc_id);
-      setMyBlocs(allBlocs?.filter(b => myIds.includes(b.id)) || []);
+      setMyBlocs(allBlocs?.filter((b: any) => myIds.includes(b.id)) || []);
 
-      // After RLS fix: all bloc members can read their bloc's resolutions
       if (myIds.length > 0) {
-        const { data: res } = await supabase
-          .from('resolutions')
-          .select('*, blocs(name)')
-          .in('bloc_id', myIds)
-          .order('created_at', { ascending: false });
-        if (res) setResolutions(res);
+        try {
+          const result = await getResolutions(myIds); // delegate mode — pass bloc IDs
+          setResolutions(result.resolutions || []);
+        } catch (e) {
+          console.error('Delegate resolution fetch failed:', e);
+        }
       } else {
         setResolutions([]);
       }

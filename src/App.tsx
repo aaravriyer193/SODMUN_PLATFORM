@@ -653,10 +653,22 @@ const AppShell = () => {
 
           {/* ── Notifications + User footer ── */}
           <div ref={notifPanelRef} style={{ position:'relative', marginBottom:8 }}>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:collapsed?'center':'space-between', padding:'6px 4px', marginBottom:2 }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:collapsed?'center':'space-between', padding:'6px 4px', marginBottom:2, gap:4 }}>
               {!collapsed && (
-                <span style={{ fontSize:'9.5px', fontWeight:700, textTransform:'uppercase', letterSpacing:'2px', color:'#BABABA', paddingLeft:8 }}>Notifications</span>
+                <span style={{ fontSize:'9.5px', fontWeight:700, textTransform:'uppercase', letterSpacing:'2px', color:'var(--text-muted)', paddingLeft:8, flex:1 }}>Notifications</span>
               )}
+              <button
+                onClick={()=>setDarkMode((d:boolean)=>!d)}
+                title={darkMode ? 'Light mode' : 'Dark mode'}
+                style={{ width:32, height:32, borderRadius:9, border:'1px solid var(--border)', background:'var(--bg-elevated)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text-muted)', flexShrink:0 }}
+                onMouseEnter={e=>(e.currentTarget as HTMLElement).style.color='var(--accent)'}
+                onMouseLeave={e=>(e.currentTarget as HTMLElement).style.color='var(--text-muted)'}
+              >
+                {darkMode
+                  ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/></svg>
+                  : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                }
+              </button>
               <button
                 className={`bell-btn ${unreadCount>0?'has-unread':''}`}
                 onClick={()=>setShowNP(v=>!v)}
@@ -691,8 +703,8 @@ const AppShell = () => {
             {showUserMenu && (
               <div className="user-menu">
                 <div style={{ padding:'14px 14px 10px' }}>
-                  <p style={{ fontSize:'12px', fontWeight:700, color:'#18181B', marginBottom:2 }}>{profile?.delegation||profile?.role}</p>
-                  <p style={{ fontSize:'11px', color:'#A1A1AA', fontWeight:500 }}>{profile?.role} · {profile?.committee}</p>
+                  <p style={{ fontSize:'12px', fontWeight:700, color:'var(--text-primary)', marginBottom:2 }}>{profile?.delegation||profile?.role}</p>
+                  <p style={{ fontSize:'11px', color:'var(--text-muted)', fontWeight:500 }}>{profile?.role} · {profile?.committee}</p>
                 </div>
                 <div className="user-menu-divider" />
                 {!isChair && (

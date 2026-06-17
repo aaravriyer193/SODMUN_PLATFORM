@@ -75,6 +75,8 @@ const EditableBlock = ({ block, index, commitBlocks, blocks, handleKeyDown, getP
   };
 
   const handleMouseUp = () => {
+    // Only show format toolbar when the document is actually editable
+    if (!canEdit) { setToolbarPos(null); return; }
     const sel = window.getSelection();
     if (sel && !sel.isCollapsed && editorRef.current?.contains(sel.anchorNode)) {
       const rect = sel.getRangeAt(0).getBoundingClientRect();
@@ -177,7 +179,8 @@ export default function Resolutions() {
 
   // Presence (cursors)
   const [presences, setPresences]       = useState<any[]>([]);
-  const presenceChannelRef              = useRef<any>(null);
+  const presenceChannelRef = useRef<any>(null);
+  const profileRef      = useRef<any>(null);
 
   const pendingBlocks  = useRef(blocks);
   const activeResRef   = useRef(activeRes);
@@ -189,6 +192,7 @@ export default function Resolutions() {
   const isChair = profile?.role !== 'Delegate' && profile?.role !== null;
 
   useEffect(() => { pendingBlocks.current = blocks; }, [blocks]);
+  useEffect(() => { profileRef.current = profile; }, [profile]);
   useEffect(() => { activeResRef.current = activeRes; }, [activeRes]);
   useEffect(() => { if (authUser) fetchCoreData(); }, [authUser]);
 
@@ -239,11 +243,12 @@ export default function Resolutions() {
         } catch {}
       })
       // Realtime for new amendments
-      .on('postgres_changes', { event:'INSERT', schema:'public', table:'resolution_amendments', filter:`resolution_id=eq.${activeRes.id}` }, () => {
-        loadAmendments(activeRes.id);
+      .on('postgres_changes', { event:'INSERT', schema:'public', table:'resolution_amendments' }, (payload) => {
+        // Only reload if it's for our resolution
+        if (payload.new.resolution_id === activeRes.id) loadAmendments(activeRes.id);
       })
-      .on('postgres_changes', { event:'UPDATE', schema:'public', table:'resolution_amendments', filter:`resolution_id=eq.${activeRes.id}` }, () => {
-        loadAmendments(activeRes.id);
+      .on('postgres_changes', { event:'UPDATE', schema:'public', table:'resolution_amendments' }, (payload) => {
+        if (payload.new.resolution_id === activeRes.id) loadAmendments(activeRes.id);
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -464,6 +469,18 @@ export default function Resolutions() {
   const handleDocumentMouseUp = useCallback((e: MouseEvent) => {
     // Don't trigger if clicking inside the popup itself
     if ((e.target as HTMLElement).closest('.amend-popup')) return;
+    // Don't show amendment toolbar on locked resolutions
+    if (activeResRef.current?.status === 'locked') {
+      setSelectionToolbar(null);
+      return;
+    }
+    // Only show if amendments panel is relevant
+    const canAmend = activeResRef.current?.amendments_open || false;
+    const userIsChair = !!(profileRef?.current?.role && profileRef.current.role !== 'Delegate');
+    if (!canAmend && !userIsChair) {
+      setSelectionToolbar(null);
+      return;
+    }
     setTimeout(() => {
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed || !sel.toString().trim()) {
@@ -577,6 +594,13 @@ export default function Resolutions() {
     } catch (e) { console.error(e); }
   };
 
+  // Reload amendments whenever the panel is opened
+  useEffect(() => {
+    if (showAmendments && activeRes?.id) {
+      loadAmendments(activeRes.id);
+    }
+  }, [showAmendments]);
+
   const handleToggleAmendments = async () => {
     const next = !activeRes.amendments_open;
     try {
@@ -602,12 +626,19 @@ export default function Resolutions() {
     activeRes?.status === 'submitted' ? isChair :
     true; // draft — both chairs and delegates
 
+  // Delegates only see their own amendments + approved ones
+  const visibleAmendments = isChair
+    ? amendments
+    : amendments.filter(a => a.submitted_by === authUser?.id || a.status === 'approved');
+
   const filteredResolutions = blocFilter === 'all' ? resolutions : resolutions.filter(r => r.bloc_id?.toString() === blocFilter);
 
   const statusColor = (s: string) => s === 'locked' ? '#DC2626' : s === 'submitted' ? '#F59E0B' : '#22C55E';
   const statusLabel = (s: string) => s === 'locked' ? 'Locked' : s === 'submitted' ? 'Submitted' : 'Draft';
 
-  const pendingAmendments = amendments.filter(a => a.status === 'pending');
+  const pendingAmendments = isChair
+    ? amendments.filter(a => a.status === 'pending')
+    : amendments.filter(a => a.submitted_by === authUser?.id && a.status === 'pending');
 
   // ── EDITOR VIEW ───────────────────────────────────────────────────────────────
   if (activeRes) {
@@ -842,7 +873,7 @@ export default function Resolutions() {
           )}
 
           {/* ── Floating selection toolbar ── */}
-          {selectionToolbar && (isChair || activeRes.amendments_open) && !amendPopup && (
+          {selectionToolbar && (isChair || activeRes.amendments_open) && !amendPopup && activeRes.status !== 'locked' && (
             <div className="sel-toolbar" style={{ left: selectionToolbar.x, top: selectionToolbar.y }}>
               <button className="sel-btn sel-btn-add"    onClick={() => openAmendPopup('add')}>+ Add</button>
               <button className="sel-btn sel-btn-modify" onClick={() => openAmendPopup('modify')}>~ Modify</button>
@@ -851,9 +882,10 @@ export default function Resolutions() {
           )}
 
           {/* Hint when amendments open but nothing selected */}
-          {!isChair && activeRes.amendments_open && !selectionToolbar && !amendPopup && activeRes.status === 'submitted' && (
-            <div style={{ position:'fixed', bottom:showAmendments ? 280 : 60, left:'50%', transform:'translateX(-50%)', background:'var(--bg-elevated)', border:'1px solid var(--accent-mid)', borderRadius:99, padding:'6px 16px', fontSize:11, fontWeight:700, color:'var(--accent)', boxShadow:'var(--shadow-md)', pointerEvents:'none', whiteSpace:'nowrap', zIndex:799 }}>
-              Select text in the document to propose an amendment
+          {(isChair || activeRes.amendments_open) && !selectionToolbar && !amendPopup && activeRes.status !== 'locked' && (
+            <div style={{ position:'fixed', bottom: showAmendments ? 300 : 60, left:'50%', transform:'translateX(-50%)', background:'var(--bg-elevated)', border:'1px solid var(--accent-mid)', borderRadius:99, padding:'7px 18px', fontSize:11, fontWeight:700, color:'var(--accent)', boxShadow:'var(--shadow-md)', pointerEvents:'none', whiteSpace:'nowrap', zIndex:799, display:'flex', alignItems:'center', gap:8 }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              Highlight text in the document to propose an amendment
             </div>
           )}
 
@@ -929,10 +961,10 @@ export default function Resolutions() {
 
           {/* Amendment list */}
           <div className="amend-list">
-            {amendments.length === 0 && (
-              <p style={{ padding:'14px 20px', fontSize:12, color:'var(--text-muted)' }}>No amendments submitted yet.</p>
+            {visibleAmendments.length === 0 && (
+              <p style={{ padding:'14px 20px', fontSize:12, color:'var(--text-muted)' }}>{isChair ? 'No amendments submitted yet.' : 'No amendments yet. Submit one by highlighting text above.'}</p>
             )}
-            {amendments.map(a => {
+            {visibleAmendments.map(a => {
               const typeColor = a.type==='add' ? { bg:'rgba(34,197,94,0.12)', c:'#16A34A' } : a.type==='strike' ? { bg:'rgba(220,38,38,0.10)', c:'#DC2626' } : { bg:'rgba(245,158,11,0.12)', c:'#B45309' };
               const statusColor = a.status==='pending' ? { bg:'rgba(245,158,11,0.12)', c:'#B45309' } : a.status==='approved' ? { bg:'rgba(34,197,94,0.12)', c:'#16A34A' } : { bg:'rgba(220,38,38,0.10)', c:'#DC2626' };
               return (

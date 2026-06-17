@@ -2,7 +2,7 @@
 // Manage delegates across blocs: add, remove, view unassigned
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useAuth } from './AuthContext';
+
 import { getCommitteeMembers, addToBlocApi, removeFromBlocApi, bustSidebarCache, lockRoom } from './committeeApi';
 import { supabase } from './api';
 
@@ -37,17 +37,17 @@ export default function CommitteeManager() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [memberResult, { data: lockData }, { data: userData }] = await Promise.all([
+      const [memberResult, { data: lockData }, { data: profileData }] = await Promise.all([
         getCommitteeMembers(),
         supabase.from('room_locks').select('recipient_group'),
-        supabase.auth.getUser(),
+        supabase.from('users').select('committee').eq('id', authUser?.id).single(),
       ]);
       setDelegates(memberResult.users  || []);
       setBlocs(memberResult.blocs      || []);
       setMembers(memberResult.members  || []);
       setLockedRooms(new Set((lockData || []).map((l: any) => l.recipient_group)));
-      // Get committee from first delegate or blocs
-      const comm = memberResult.blocs?.[0]?.committee || memberResult.users?.[0]?.committee || '';
+      // Get committee from the chair's own profile — always reliable
+      const comm = profileData?.committee || memberResult.blocs?.[0]?.committee || memberResult.users?.[0]?.committee || '';
       setCommittee(comm);
     } catch (e) { console.error(e); }
     setLoading(false);

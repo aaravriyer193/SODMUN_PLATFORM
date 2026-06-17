@@ -543,6 +543,63 @@ const AppShell = () => {
         .notif-item:hover { background:var(--bg-surface); }
         .toast-card { background:var(--bg-elevated); border-color:var(--border); }
 
+        /* ── Theme switch toggle ── */
+        .theme-switch {
+          font-size: 14px;
+          position: relative;
+          display: inline-block;
+          width: 4em;
+          height: 2.2em;
+          border-radius: 30px;
+          box-shadow: 0 0 8px rgba(0,0,0,0.18);
+          flex-shrink: 0;
+          cursor: pointer;
+        }
+        .theme-switch input { opacity:0; width:0; height:0; position:absolute; }
+        .ts-slider {
+          position: absolute;
+          cursor: pointer;
+          top: 0; left: 0; right: 0; bottom: 0;
+          background-color: #2a2a2a;
+          transition: 0.4s;
+          border-radius: 30px;
+          overflow: hidden;
+        }
+        .ts-slider:before {
+          position: absolute;
+          content: "";
+          height: 1.2em; width: 1.2em;
+          border-radius: 20px;
+          left: 0.5em; bottom: 0.5em;
+          transition: 0.4s;
+          transition-timing-function: cubic-bezier(0.81,-0.04,0.38,1.5);
+          box-shadow: inset 8px -4px 0px 0px #fff;
+        }
+        .theme-switch input:checked + .ts-slider { background-color: #00a6ff; }
+        .theme-switch input:checked + .ts-slider:before {
+          transform: translateX(1.8em);
+          box-shadow: inset 15px -4px 0px 15px #ffcf48;
+        }
+        .ts-star {
+          background-color: #fff;
+          border-radius: 50%;
+          position: absolute;
+          width: 5px; height: 5px;
+          transition: all 0.4s;
+        }
+        .ts-star1 { left: 2.5em; top: 0.5em; }
+        .ts-star2 { left: 2.2em; top: 1.2em; }
+        .ts-star3 { left: 3em;   top: 0.9em; }
+        .theme-switch input:checked ~ .ts-slider .ts-star { opacity: 0; }
+        .ts-cloud {
+          width: 3.5em;
+          position: absolute;
+          bottom: -1.4em; left: -1.1em;
+          opacity: 0;
+          transition: all 0.4s;
+        }
+        .theme-switch input:checked ~ .ts-slider .ts-cloud { opacity: 1; }
+
         /* ── Mobile overlay backdrop ── */
         .mobile-drawer-backdrop {
           position:fixed; inset:0; background:rgba(0,0,0,0.45);
@@ -657,18 +714,22 @@ const AppShell = () => {
               {!collapsed && (
                 <span style={{ fontSize:'9.5px', fontWeight:700, textTransform:'uppercase', letterSpacing:'2px', color:'var(--text-muted)', paddingLeft:8, flex:1 }}>Notifications</span>
               )}
-              <button
-                onClick={()=>setDarkMode((d:boolean)=>!d)}
-                title={darkMode ? 'Light mode' : 'Dark mode'}
-                style={{ width:32, height:32, borderRadius:9, border:'1px solid var(--border)', background:'var(--bg-elevated)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text-muted)', flexShrink:0 }}
-                onMouseEnter={e=>(e.currentTarget as HTMLElement).style.color='var(--accent)'}
-                onMouseLeave={e=>(e.currentTarget as HTMLElement).style.color='var(--text-muted)'}
-              >
-                {darkMode
-                  ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/></svg>
-                  : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-                }
-              </button>
+              {/* ── Theme Switch ── */}
+              <label className="theme-switch" title={darkMode ? 'Light mode' : 'Dark mode'}>
+                <input
+                  type="checkbox"
+                  checked={!darkMode}
+                  onChange={() => setDarkMode((d:boolean) => !d)}
+                />
+                <span className="ts-slider">
+                  <div className="ts-star ts-star1" />
+                  <div className="ts-star ts-star2" />
+                  <div className="ts-star ts-star3" />
+                  <svg viewBox="0 0 16 16" className="ts-cloud">
+                    <path transform="matrix(.77976 0 0 .78395-299.99-418.63)" fill="#fff" d="m391.84 540.91c-.421-.329-.949-.524-1.523-.524-1.351 0-2.451 1.084-2.485 2.435-1.395.526-2.388 1.88-2.388 3.466 0 1.874 1.385 3.423 3.182 3.667v.034h12.73v-.006c1.775-.104 3.182-1.584 3.182-3.395 0-1.747-1.309-3.186-2.994-3.379.007-.106.011-.214.011-.322 0-2.707-2.271-4.901-5.072-4.901-2.073 0-3.856 1.202-4.643 2.925" />
+                  </svg>
+                </span>
+              </label>
               <button
                 className={`bell-btn ${unreadCount>0?'has-unread':''}`}
                 onClick={()=>setShowNP(v=>!v)}
@@ -713,16 +774,7 @@ const AppShell = () => {
                     <div className="user-menu-divider" />
                   </>
                 )}
-                <div className="user-menu-item" onClick={()=>setDarkMode((d:boolean)=>!d)} style={{ justifyContent:'space-between' }}>
-                  <span style={{ display:'flex', alignItems:'center', gap:10 }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-                    {darkMode ? 'Light mode' : 'Dark mode'}
-                  </span>
-                  <div style={{ width:32, height:18, borderRadius:99, background: darkMode ? 'var(--accent)' : 'rgba(0,0,0,0.12)', position:'relative', transition:'background 0.2s', flexShrink:0 }}>
-                    <div style={{ position:'absolute', top:2, left: darkMode ? 16 : 2, width:14, height:14, borderRadius:'50%', background:'#fff', transition:'left 0.2s', boxShadow:'0 1px 3px rgba(0,0,0,0.20)' }} />
-                  </div>
-                </div>
-                <div className="user-menu-divider" />
+
                 <div className="user-menu-item danger" onClick={()=>{ logout(); setShowUM(false); }}><IconLogout /> Sign out</div>
               </div>
             )}

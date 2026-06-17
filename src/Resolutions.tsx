@@ -56,7 +56,7 @@ const FloatingToolbar = ({ position, onAction }: any) => {
 };
 
 // ── Editable block ────────────────────────────────────────────────────────────
-const EditableBlock = ({ block, index, commitBlocks, blocks, handleKeyDown, getPrefix, canEdit, presences }: any) => {
+const EditableBlock = ({ block, index, commitBlocks, blocks, handleKeyDown, getPrefix, canEdit, presences, amendmentsOpen }: any) => {
   const editorRef  = useRef<HTMLDivElement>(null);
   const [toolbarPos, setToolbarPos] = useState<any>(null);
 
@@ -75,8 +75,8 @@ const EditableBlock = ({ block, index, commitBlocks, blocks, handleKeyDown, getP
   };
 
   const handleMouseUp = () => {
-    // Only show format toolbar when the document is actually editable
-    if (!canEdit) { setToolbarPos(null); return; }
+    // Suppress format toolbar when amendments mode is active or doc not editable
+    if (!canEdit || amendmentsOpen) { setToolbarPos(null); return; }
     const sel = window.getSelection();
     if (sel && !sel.isCollapsed && editorRef.current?.contains(sel.anchorNode)) {
       const rect = sel.getRangeAt(0).getBoundingClientRect();
@@ -129,6 +129,7 @@ const EditableBlock = ({ block, index, commitBlocks, blocks, handleKeyDown, getP
       )}
 
       <div ref={editorRef} contentEditable={canEdit} suppressContentEditableWarning
+        className={amendmentsOpen ? 'amend-select-mode' : ''}
         style={{ flex:1, minHeight:'1.6em', padding:'3px 0', fontFamily:'Manrope,sans-serif', fontSize, fontWeight, color:fontColor, lineHeight:block.type==='heading'?1.3:1.7, outline:'none', wordBreak:'break-word', overflowWrap:'break-word', whiteSpace:'pre-wrap', marginBottom:block.type==='heading'?'16px':'0px', letterSpacing:block.type==='heading'?'-0.5px':'0px', textTransform:block.type==='heading'?'uppercase':'none', maxWidth:'100%', boxSizing:'border-box', cursor:canEdit?'text':'default' }}
         spellCheck={false}
         data-placeholder={block.type==='heading'?'Resolution heading…':block.type==='point'?'Clause…':'Write here…'}
@@ -277,6 +278,15 @@ export default function Resolutions() {
   };
 
   // ── Fetch core data ───────────────────────────────────────────────────────────
+  const restoreLastResolution = (resList: any[]) => {
+    try {
+      const lastId = localStorage.getItem('sodmun_last_reso_id');
+      if (!lastId) return;
+      const match = resList.find(r => String(r.id) === lastId);
+      if (match) openResolution(match);
+    } catch {}
+  };
+
   const fetchCoreData = async () => {
     const { data: userData } = await supabase.from('users').select('*').eq('id', authUser?.id).single();
     if (!userData) return;
@@ -291,6 +301,7 @@ export default function Resolutions() {
       try {
         const result = await getResolutions(); // no bloc_ids = chair mode
         setResolutions(result.resolutions || []);
+        restoreLastResolution(result.resolutions || []);
       } catch (e) {
         console.error('Chair resolution fetch failed:', e);
       }
@@ -307,6 +318,7 @@ export default function Resolutions() {
         try {
           const result = await getResolutions(myIds); // delegate mode — pass bloc IDs
           setResolutions(result.resolutions || []);
+          restoreLastResolution(result.resolutions || []);
         } catch (e) {
           console.error('Delegate resolution fetch failed:', e);
         }
@@ -323,6 +335,8 @@ export default function Resolutions() {
     setShowHistory(false);
     setShowAmendments(false);
     setAmendMode(null);
+    // Remember for refresh
+    try { localStorage.setItem('sodmun_last_reso_id', String(res.id)); } catch {}
     try {
       const parsed = typeof res.content === 'string' ? JSON.parse(res.content) : res.content;
       setBlocks(Array.isArray(parsed) && parsed.length > 0 ? parsed : [{ id: Date.now().toString(), type:'heading', html:'', text:'', indent:0 }]);
@@ -483,8 +497,23 @@ export default function Resolutions() {
     }
     setTimeout(() => {
       const sel = window.getSelection();
+      // If no selection and amendments open: show Add-only toolbar at cursor position
       if (!sel || sel.isCollapsed || !sel.toString().trim()) {
-        setSelectionToolbar(null);
+        if (canAmend || userIsChair) {
+          const paper = document.getElementById('resolution-paper');
+          if (paper?.contains(e.target as Node)) {
+            // Find which block was clicked for "add" position
+            const blockEl = (e.target as HTMLElement).closest?.('[data-block-id]');
+            const blockId = blockEl?.getAttribute('data-block-id') || '';
+            setSelectionData({ blockId, charStart: 0, charEnd: 0, text: '' });
+            // Show add-only toolbar near cursor
+            setSelectionToolbar({ x: e.clientX, y: e.clientY + window.scrollY });
+          } else {
+            setSelectionToolbar(null);
+          }
+        } else {
+          setSelectionToolbar(null);
+        }
         return;
       }
       // Only trigger if selection is inside the document paper
@@ -652,6 +681,10 @@ export default function Resolutions() {
           @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
           [contenteditable]:empty:before { content:attr(data-placeholder); color:var(--text-muted); pointer-events:none; display:block; }
           [contenteditable]:focus { outline:none; }
+          /* Amendment selection highlight */
+          .amend-select-mode::selection { background: rgba(245,158,11,0.35); color: inherit; }
+          .amend-select-mode ::-moz-selection { background: rgba(245,158,11,0.35); color: inherit; }
+
           .ver-panel { width:300px; flex-shrink:0; border-left:1px solid var(--border); background:var(--bg-sidebar); display:flex; flex-direction:column; overflow:hidden; }
           .ver-item { padding:12px 14px; border-bottom:1px solid var(--border); cursor:pointer; transition:background 0.1s; }
           .ver-item:hover { background:var(--bg-surface); }
@@ -692,7 +725,7 @@ export default function Resolutions() {
         {!presentationMode && (
           <div style={{ padding:'0 24px', height:52, background:'var(--bg-elevated)', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0, boxShadow:'var(--shadow-sm)' }}>
             <div style={{ display:'flex', alignItems:'center', gap:14 }}>
-              <button onClick={() => setActiveRes(null)} style={{ background:'transparent', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:8, color:'var(--text-secondary)', fontSize:13, fontWeight:600, fontFamily:'Manrope,sans-serif', padding:'6px 10px', borderRadius:8 }}
+              <button onClick={() => { setActiveRes(null); try { localStorage.removeItem('sodmun_last_reso_id'); } catch {} }} style={{ background:'transparent', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:8, color:'var(--text-secondary)', fontSize:13, fontWeight:600, fontFamily:'Manrope,sans-serif', padding:'6px 10px', borderRadius:8 }}
                 onMouseEnter={e => (e.currentTarget as HTMLElement).style.background='var(--bg-surface)'}
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.background='transparent'}
               ><IconBack /> Resolutions</button>
@@ -734,8 +767,8 @@ export default function Resolutions() {
                 </>
               )}
 
-              {/* Delegate: submit */}
-              {!isChair && activeRes.status === 'draft' && (
+              {/* Delegate: submit — hidden when amendments are open */}
+              {!isChair && activeRes.status === 'draft' && !activeRes.amendments_open && (
                 <button onClick={handleSubmit} style={{ fontSize:11, padding:'6px 14px', borderRadius:8, background:'var(--accent)', color:'#fff', border:'none', cursor:'pointer', fontFamily:'Manrope,sans-serif', fontWeight:700, boxShadow:'0 2px 8px rgba(240,124,0,0.25)' }}>
                   Submit for Review
                 </button>
@@ -777,15 +810,19 @@ export default function Resolutions() {
         )}
 
         {/* ── Status banner for delegates ── */}
-        {!isChair && activeRes.status === 'submitted' && (
-          <div style={{ padding:'8px 24px', borderBottom:'1px solid', fontSize:12, fontWeight:700, flexShrink:0, display:'flex', alignItems:'center', gap:8,
-            background: activeRes.amendments_open ? 'rgba(99,102,241,0.07)' : 'rgba(245,158,11,0.08)',
-            borderColor: activeRes.amendments_open ? 'rgba(99,102,241,0.20)' : 'rgba(245,158,11,0.20)',
-            color: activeRes.amendments_open ? '#6366F1' : '#B45309',
-          }}>
-            {activeRes.amendments_open
-              ? <><IconAmend /> Amendments open — select any text to propose a change</>
-              : <><IconCheck /> Submitted for review — editing disabled. Waiting for chair to open amendments.</>}
+        {/* Amendments-open strip — amber, same style as locked */}
+        {activeRes.amendments_open && activeRes.status !== 'locked' && (
+          <div style={{ padding:'9px 24px', background:'rgba(245,158,11,0.10)', borderBottom:'1px solid rgba(245,158,11,0.28)', fontSize:12, fontWeight:700, color:'#92400E', flexShrink:0, display:'flex', alignItems:'center', gap:8 }}>
+            <IconAmend />
+            {isChair
+              ? 'Amendments are open — delegates can propose changes by highlighting text'
+              : 'Amendments open — highlight any text in the document to propose a change'}
+          </div>
+        )}
+        {/* Submitted strip (only when amendments NOT open) */}
+        {!isChair && activeRes.status === 'submitted' && !activeRes.amendments_open && (
+          <div style={{ padding:'9px 24px', background:'rgba(245,158,11,0.08)', borderBottom:'1px solid rgba(245,158,11,0.20)', fontSize:12, fontWeight:700, color:'#B45309', flexShrink:0, display:'flex', alignItems:'center', gap:8 }}>
+            <IconCheck /> Submitted for review — editing disabled. Waiting for chair to open amendments.
           </div>
         )}
         {activeRes.status === 'locked' && (
@@ -829,6 +866,7 @@ export default function Resolutions() {
                       getPrefix={getPrefix}
                       canEdit={!previewBlocks && canEdit}
                       presences={presences}
+                      amendmentsOpen={!!activeRes?.amendments_open && activeRes?.status !== 'locked'}
                     />
                   </div>
                 ))}
@@ -875,9 +913,12 @@ export default function Resolutions() {
           {/* ── Floating selection toolbar ── */}
           {selectionToolbar && (isChair || activeRes.amendments_open) && !amendPopup && activeRes.status !== 'locked' && (
             <div className="sel-toolbar" style={{ left: selectionToolbar.x, top: selectionToolbar.y }}>
+              {/* Show Add always; Modify+Strike only when text is selected */}
               <button className="sel-btn sel-btn-add"    onClick={() => openAmendPopup('add')}>+ Add</button>
-              <button className="sel-btn sel-btn-modify" onClick={() => openAmendPopup('modify')}>~ Modify</button>
-              <button className="sel-btn sel-btn-strike" onClick={() => openAmendPopup('strike')}>✕ Strike</button>
+              {selectionData?.text && <>
+                <button className="sel-btn sel-btn-modify" onClick={() => openAmendPopup('modify')}>~ Modify</button>
+                <button className="sel-btn sel-btn-strike" onClick={() => openAmendPopup('strike')}>✕ Strike</button>
+              </>}
             </div>
           )}
 

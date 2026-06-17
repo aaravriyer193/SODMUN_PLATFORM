@@ -708,28 +708,34 @@ const AppShell = () => {
 
           <div style={{ flex:1 }} />
 
+          {/* ── Theme Switch — above notifications ── */}
+          <div style={{ display:'flex', alignItems:'center', justifyContent:collapsed?'center':'space-between', padding:'6px 4px 10px', gap:8 }}>
+            {!collapsed && (
+              <span style={{ fontSize:'9.5px', fontWeight:700, textTransform:'uppercase', letterSpacing:'2px', color:'var(--text-muted)', paddingLeft:8 }}>Appearance</span>
+            )}
+            <label className="theme-switch" title={darkMode ? 'Light mode' : 'Dark mode'}>
+              <input
+                type="checkbox"
+                checked={!darkMode}
+                onChange={() => setDarkMode((d:boolean) => !d)}
+              />
+              <span className="ts-slider">
+                <div className="ts-star ts-star1" />
+                <div className="ts-star ts-star2" />
+                <div className="ts-star ts-star3" />
+                <svg viewBox="0 0 16 16" className="ts-cloud">
+                  <path transform="matrix(.77976 0 0 .78395-299.99-418.63)" fill="#fff" d="m391.84 540.91c-.421-.329-.949-.524-1.523-.524-1.351 0-2.451 1.084-2.485 2.435-1.395.526-2.388 1.88-2.388 3.466 0 1.874 1.385 3.423 3.182 3.667v.034h12.73v-.006c1.775-.104 3.182-1.584 3.182-3.395 0-1.747-1.309-3.186-2.994-3.379.007-.106.011-.214.011-.322 0-2.707-2.271-4.901-5.072-4.901-2.073 0-3.856 1.202-4.643 2.925" />
+                </svg>
+              </span>
+            </label>
+          </div>
+
           {/* ── Notifications + User footer ── */}
           <div ref={notifPanelRef} style={{ position:'relative', marginBottom:8 }}>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:collapsed?'center':'space-between', padding:'6px 4px', marginBottom:2, gap:4 }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:collapsed?'center':'space-between', padding:'6px 4px', marginBottom:2 }}>
               {!collapsed && (
-                <span style={{ fontSize:'9.5px', fontWeight:700, textTransform:'uppercase', letterSpacing:'2px', color:'var(--text-muted)', paddingLeft:8, flex:1 }}>Notifications</span>
+                <span style={{ fontSize:'9.5px', fontWeight:700, textTransform:'uppercase', letterSpacing:'2px', color:'var(--text-muted)', paddingLeft:8 }}>Notifications</span>
               )}
-              {/* ── Theme Switch ── */}
-              <label className="theme-switch" title={darkMode ? 'Light mode' : 'Dark mode'}>
-                <input
-                  type="checkbox"
-                  checked={!darkMode}
-                  onChange={() => setDarkMode((d:boolean) => !d)}
-                />
-                <span className="ts-slider">
-                  <div className="ts-star ts-star1" />
-                  <div className="ts-star ts-star2" />
-                  <div className="ts-star ts-star3" />
-                  <svg viewBox="0 0 16 16" className="ts-cloud">
-                    <path transform="matrix(.77976 0 0 .78395-299.99-418.63)" fill="#fff" d="m391.84 540.91c-.421-.329-.949-.524-1.523-.524-1.351 0-2.451 1.084-2.485 2.435-1.395.526-2.388 1.88-2.388 3.466 0 1.874 1.385 3.423 3.182 3.667v.034h12.73v-.006c1.775-.104 3.182-1.584 3.182-3.395 0-1.747-1.309-3.186-2.994-3.379.007-.106.011-.214.011-.322 0-2.707-2.271-4.901-5.072-4.901-2.073 0-3.856 1.202-4.643 2.925" />
-                  </svg>
-                </span>
-              </label>
               <button
                 className={`bell-btn ${unreadCount>0?'has-unread':''}`}
                 onClick={()=>setShowNP(v=>!v)}

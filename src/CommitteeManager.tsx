@@ -2,6 +2,7 @@
 // Manage delegates across blocs: add, remove, view unassigned
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useAuth } from './AuthContext';
 
 import { getCommitteeMembers, addToBlocApi, removeFromBlocApi, bustSidebarCache, lockRoom } from './committeeApi';
 import { supabase } from './api';

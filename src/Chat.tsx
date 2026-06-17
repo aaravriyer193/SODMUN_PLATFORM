@@ -288,7 +288,7 @@ export default function Chat() {
   };
 
   return (
-    <div style={{ height:'100vh', display:'flex', flexDirection:'column', padding:'32px 32px 24px', gap:'20px', boxSizing:'border-box' }}>
+    <div style={{ height:'100vh', display:'flex', flexDirection:'column', padding:'32px 32px 24px', gap:'20px', boxSizing:'border-box' }} className="chat-page-wrap">
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
         .chat-shell { flex:1; display:flex; border-radius:20px; overflow:hidden; border:1px solid var(--border); box-shadow:var(--shadow-md); background:var(--bg-surface); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); min-height:0; }
@@ -315,7 +315,14 @@ export default function Chat() {
         .obs-chip { font-size:9px; font-weight:700; background:rgba(113,113,122,0.10); color:var(--text-muted); padding:1px 6px; border-radius:99px; flex-shrink:0; display:flex; align-items:center; gap:3px; }
         .lock-chip { font-size:9px; font-weight:700; background:rgba(220,38,38,0.10); color:#DC2626; padding:1px 6px; border-radius:99px; flex-shrink:0; }
         ::-webkit-scrollbar { width:4px; } ::-webkit-scrollbar-track { background:transparent; } ::-webkit-scrollbar-thumb { background:rgba(128,128,128,0.25); border-radius:99px; }
-        @media (max-width:768px) { .chat-sidebar-inner { display:none; } .chat-shell { border-radius:14px; } }
+        @media (max-width:768px) {
+          .chat-sidebar-inner { display:none; }
+          .chat-shell { border-radius:14px; }
+          .chat-page-wrap { padding: 16px 12px 0 !important; }
+          .chat-page-wrap .chat-shell { border-radius:12px; }
+          /* Input bar needs extra bottom padding for tab bar */
+          .chat-main-inner form { padding-bottom: calc(env(safe-area-inset-bottom) + 70px) !important; }
+        }
       `}</style>
 
       {/* Page header */}

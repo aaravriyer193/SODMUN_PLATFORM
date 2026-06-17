@@ -325,6 +325,17 @@ const AppShell = () => {
   const [notifications, setNotifs] = useState<Notification[]>([]);
   const [toasts, setToasts]       = useState<Notification[]>([]);
 
+  const [darkMode, setDarkMode] = useState<boolean>(() => {
+    const stored = localStorage.getItem('sodmun_dark');
+    if (stored !== null) return stored === 'true';
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : 'light');
+    localStorage.setItem('sodmun_dark', String(darkMode));
+  }, [darkMode]);
+
   const userMenuRef  = useRef<HTMLDivElement>(null);
   const notifPanelRef = useRef<HTMLDivElement>(null);
   const profileRef   = useRef<any>(null);
@@ -478,6 +489,43 @@ const AppShell = () => {
         ::-webkit-scrollbar-track { background:transparent; }
         ::-webkit-scrollbar-thumb { background:rgba(0,0,0,0.14); border-radius:99px; }
         ::-webkit-scrollbar-thumb:hover { background:rgba(0,0,0,0.22); }
+
+        /* ── Dark mode via data-theme (manual toggle) overrides prefers-color-scheme ── */
+        [data-theme="dark"] {
+          --bg-base:        #0F0E0C;
+          --bg-surface:     rgba(28,26,22,0.85);
+          --bg-elevated:    rgba(36,33,28,0.95);
+          --bg-input:       rgba(40,37,32,0.90);
+          --bg-overlay:     rgba(15,14,12,0.96);
+          --bg-sidebar:     rgba(22,20,17,0.92);
+          --bg-card:        rgba(30,28,24,0.90);
+          --text-primary:   #F0EDE8;
+          --text-secondary: #A1A1AA;
+          --text-muted:     #71717A;
+          --border:         rgba(255,255,255,0.07);
+          --border-strong:  rgba(255,255,255,0.12);
+          --border-accent:  rgba(240,124,0,0.35);
+          --shadow-sm:      0 1px 3px rgba(0,0,0,0.30),0 1px 2px rgba(0,0,0,0.20);
+          --shadow-md:      0 4px 16px rgba(0,0,0,0.35),0 2px 6px rgba(0,0,0,0.20);
+          --shadow-lg:      0 12px 40px rgba(0,0,0,0.40),0 4px 12px rgba(0,0,0,0.25);
+          --shadow-xl:      0 24px 64px rgba(0,0,0,0.50),0 8px 24px rgba(0,0,0,0.30);
+        }
+        [data-theme="light"] {
+          --bg-base:        #F5F3EF;
+          --bg-surface:     rgba(255,255,255,0.72);
+          --bg-elevated:    rgba(255,255,255,0.92);
+          --bg-input:       rgba(255,255,255,0.85);
+          --bg-sidebar:     rgba(255,255,255,0.78);
+          --text-primary:   #18181B;
+          --text-secondary: #71717A;
+          --text-muted:     #A1A1AA;
+          --border:         rgba(0,0,0,0.08);
+          --border-strong:  rgba(0,0,0,0.14);
+          --shadow-sm:      0 1px 3px rgba(0,0,0,0.06),0 1px 2px rgba(0,0,0,0.04);
+          --shadow-md:      0 4px 16px rgba(0,0,0,0.07),0 2px 6px rgba(0,0,0,0.04);
+          --shadow-lg:      0 12px 40px rgba(0,0,0,0.10),0 4px 12px rgba(0,0,0,0.06);
+          --shadow-xl:      0 24px 64px rgba(0,0,0,0.12),0 8px 24px rgba(0,0,0,0.07);
+        }
 
         /* ── Dark mode sidebar / nav ── */
         .nav-item { color: var(--text-secondary); }
@@ -653,6 +701,16 @@ const AppShell = () => {
                     <div className="user-menu-divider" />
                   </>
                 )}
+                <div className="user-menu-item" onClick={()=>setDarkMode((d:boolean)=>!d)} style={{ justifyContent:'space-between' }}>
+                  <span style={{ display:'flex', alignItems:'center', gap:10 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                    {darkMode ? 'Light mode' : 'Dark mode'}
+                  </span>
+                  <div style={{ width:32, height:18, borderRadius:99, background: darkMode ? 'var(--accent)' : 'rgba(0,0,0,0.12)', position:'relative', transition:'background 0.2s', flexShrink:0 }}>
+                    <div style={{ position:'absolute', top:2, left: darkMode ? 16 : 2, width:14, height:14, borderRadius:'50%', background:'#fff', transition:'left 0.2s', boxShadow:'0 1px 3px rgba(0,0,0,0.20)' }} />
+                  </div>
+                </div>
+                <div className="user-menu-divider" />
                 <div className="user-menu-item danger" onClick={()=>{ logout(); setShowUM(false); }}><IconLogout /> Sign out</div>
               </div>
             )}

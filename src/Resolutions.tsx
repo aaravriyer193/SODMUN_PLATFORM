@@ -133,15 +133,7 @@ const EditableBlock = ({ block, index, commitBlocks, blocks, handleKeyDown, getP
         onInput={handleInput} onMouseUp={handleMouseUp} onKeyDown={handleLocalKeyDown}
       />
 
-      {/* Presence cursors */}
-      {blockPresences.map((p: any) => (
-        <div key={p.userId} title={p.delegation} style={{ position:'absolute', right:0, top:0, display:'flex', alignItems:'center', gap:4, pointerEvents:'none', zIndex:10 }}>
-          <div style={{ color:userColor(p.userId), fontSize:10 }}><IconCursor /></div>
-          <span style={{ fontSize:10, fontWeight:700, color:userColor(p.userId), background:'var(--bg-elevated)', border:`1px solid ${userColor(p.userId)}`, borderRadius:4, padding:'1px 5px', whiteSpace:'nowrap' }}>
-            {p.delegation}
-          </span>
-        </div>
-      ))}
+      {/* Cursors removed — presence shown in toolbar avatars only */}
     </div>
   );
 };
@@ -237,10 +229,10 @@ export default function Resolutions() {
       .on('postgres_changes', { event:'UPDATE', schema:'public', table:'resolutions', filter:`id=eq.${activeRes.id}` }, (payload) => {
         try {
           if (payload.new.title !== activeRes.title) {
-            setActiveRes((p: any) => ({ ...p, title: payload.new.title, status: payload.new.status, amendments_open: payload.new.amendments_open }));
+            setActiveRes((p: any) => ({ ...p, title: payload.new.title, status: payload.new.status, amendments_open: payload.new.amendments_open ?? p.amendments_open }));
             setResolutions(prev => prev.map(r => r.id === activeRes.id ? { ...r, title: payload.new.title, status: payload.new.status } : r));
           } else {
-            setActiveRes((p: any) => ({ ...p, status: payload.new.status, amendments_open: payload.new.amendments_open }));
+            setActiveRes((p: any) => ({ ...p, status: payload.new.status, amendments_open: payload.new.amendments_open ?? p.amendments_open }));
           }
           const inc = typeof payload.new.content === 'string' ? JSON.parse(payload.new.content) : payload.new.content;
           if (Array.isArray(inc) && JSON.stringify(inc) !== JSON.stringify(blocks)) setBlocks(inc);
@@ -602,9 +594,13 @@ export default function Resolutions() {
   };
 
   // ── Permissions ───────────────────────────────────────────────────────────────
-  const canEdit = isChair
-    ? activeRes?.status !== 'locked'
-    : activeRes?.status === 'draft';
+  // locked = nobody edits (not even chairs)
+  // submitted = only chairs can edit
+  // draft = everyone in the bloc can edit
+  const canEdit =
+    activeRes?.status === 'locked'    ? false :
+    activeRes?.status === 'submitted' ? isChair :
+    true; // draft — both chairs and delegates
 
   const filteredResolutions = blocFilter === 'all' ? resolutions : resolutions.filter(r => r.bloc_id?.toString() === blocFilter);
 
@@ -751,16 +747,19 @@ export default function Resolutions() {
 
         {/* ── Status banner for delegates ── */}
         {!isChair && activeRes.status === 'submitted' && (
-          <div style={{ padding:'8px 24px', background:'rgba(245,158,11,0.08)', borderBottom:'1px solid rgba(245,158,11,0.20)', fontSize:12, fontWeight:700, color:'#B45309', flexShrink:0, display:'flex', alignItems:'center', gap:8 }}>
-            <IconCheck /> Submitted for review — editing disabled.
+          <div style={{ padding:'8px 24px', borderBottom:'1px solid', fontSize:12, fontWeight:700, flexShrink:0, display:'flex', alignItems:'center', gap:8,
+            background: activeRes.amendments_open ? 'rgba(99,102,241,0.07)' : 'rgba(245,158,11,0.08)',
+            borderColor: activeRes.amendments_open ? 'rgba(99,102,241,0.20)' : 'rgba(245,158,11,0.20)',
+            color: activeRes.amendments_open ? '#6366F1' : '#B45309',
+          }}>
             {activeRes.amendments_open
-              ? ' Amendments are open — use the Amendments panel to propose changes.'
-              : ' Waiting for chair to open amendments.'}
+              ? <><IconAmend /> Amendments open — select any text to propose a change</>
+              : <><IconCheck /> Submitted for review — editing disabled. Waiting for chair to open amendments.</>}
           </div>
         )}
-        {!isChair && activeRes.status === 'locked' && (
+        {activeRes.status === 'locked' && (
           <div style={{ padding:'8px 24px', background:'rgba(220,38,38,0.07)', borderBottom:'1px solid rgba(220,38,38,0.18)', fontSize:12, fontWeight:700, color:'#DC2626', flexShrink:0, display:'flex', alignItems:'center', gap:8 }}>
-            <IconLock /> Locked by Chair — no changes can be made.
+            <IconLock /> {isChair ? 'Resolution is locked — unlock to make changes.' : 'Locked by Chair — no changes can be made.'}
           </div>
         )}
 

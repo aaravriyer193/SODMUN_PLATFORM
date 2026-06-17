@@ -488,13 +488,13 @@ export default function Resolutions() {
       setSelectionToolbar(null);
       return;
     }
-    // Only show if amendments panel is relevant
-    const canAmend = activeResRef.current?.amendments_open || false;
-    const userIsChair = !!(profileRef?.current?.role && profileRef.current.role !== 'Delegate');
-    if (!canAmend && !userIsChair) {
+    // Only show if amendments are open
+    if (!activeResRef.current?.amendments_open) {
       setSelectionToolbar(null);
       return;
     }
+    const userIsChair = !!(profileRef?.current?.role && profileRef.current.role !== 'Delegate');
+    const canAmend = true; // amendments_open is already confirmed above
     setTimeout(() => {
       const sel = window.getSelection();
       // If no selection and amendments open: show Add-only toolbar at cursor position
@@ -911,7 +911,7 @@ export default function Resolutions() {
           )}
 
           {/* ── Floating selection toolbar ── */}
-          {selectionToolbar && (isChair || activeRes.amendments_open) && !amendPopup && activeRes.status !== 'locked' && (
+          {selectionToolbar && activeRes.amendments_open && !amendPopup && activeRes.status !== 'locked' && (
             <div className="sel-toolbar" style={{ left: selectionToolbar.x, top: selectionToolbar.y }}>
               {/* Show Add always; Modify+Strike only when text is selected */}
               <button className="sel-btn sel-btn-add"    onClick={() => openAmendPopup('add')}>+ Add</button>

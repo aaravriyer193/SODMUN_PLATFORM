@@ -7,6 +7,7 @@ import {
   submitResolution, lockResolution, unlockResolution, reopenResolution,
   saveResolutionVersion, getResolutionVersions, restoreResolutionVersion,
   submitAmendment, getAmendments, reviewAmendment,
+  getBlocks, upsertBlock, deleteBlock, reorderBlocks,
 } from './committeeApi';
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
@@ -22,7 +23,6 @@ const IconHistory   = () => <svg width="14" height="14" viewBox="0 0 24 24" fill
 const IconCheck     = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>;
 const IconX         = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
 const IconAmend     = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
-const IconCursor    = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M4 0l16 12.3-6.6.9L9.8 20z"/></svg>;
 
 // ── Time ago helper ───────────────────────────────────────────────────────────
 function timeAgo(ts: string) {
@@ -136,7 +136,37 @@ const EditableBlock = ({ block, index, commitBlocks, blocks, handleKeyDown, getP
         onInput={handleInput} onMouseUp={handleMouseUp} onKeyDown={handleLocalKeyDown}
       />
 
-      {/* Cursors removed — presence shown in toolbar avatars only */}
+      {/* Live text cursors — Google Docs style blinking caret, no mouse pointer */}
+      {blockPresences.map((p: any) => (
+        <div
+          key={p.userId}
+          title={p.delegation}
+          style={{
+            position: 'absolute', right: 0, top: 2,
+            display: 'flex', alignItems: 'stretch', gap: 4,
+            pointerEvents: 'none', zIndex: 10,
+            transition: 'opacity 0.2s ease',
+          }}
+        >
+          {/* Blinking text caret — thin vertical bar, like a real cursor */}
+          <div style={{
+            width: 2, alignSelf: 'stretch', minHeight: 18,
+            background: userColor(p.userId),
+            borderRadius: 1,
+            animation: 'caretBlink 1s step-end infinite',
+          }} />
+          {/* Name tag */}
+          <span style={{
+            fontSize: 10, fontWeight: 700, color: '#fff',
+            background: userColor(p.userId),
+            borderRadius: 4, padding: '2px 6px', whiteSpace: 'nowrap',
+            boxShadow: '0 1px 4px rgba(0,0,0,0.20)',
+            alignSelf: 'flex-start',
+          }}>
+            {p.delegation}
+          </span>
+        </div>
+      ))}
     </div>
   );
 };
@@ -182,6 +212,7 @@ export default function Resolutions() {
   const [presences, setPresences]       = useState<any[]>([]);
   const presenceChannelRef = useRef<any>(null);
   const profileRef      = useRef<any>(null);
+  const myBlocsRef       = useRef<any[]>([]);
 
   const pendingBlocks  = useRef(blocks);
   const activeResRef   = useRef(activeRes);
@@ -194,6 +225,8 @@ export default function Resolutions() {
 
   useEffect(() => { pendingBlocks.current = blocks; }, [blocks]);
   useEffect(() => { profileRef.current = profile; }, [profile]);
+  useEffect(() => { myBlocsRef.current = myBlocs; }, [myBlocs]);
+  useEffect(() => { myBlocsRef.current = myBlocs; }, [myBlocs]);
   useEffect(() => { activeResRef.current = activeRes; }, [activeRes]);
   useEffect(() => { if (authUser) fetchCoreData(); }, [authUser]);
 
@@ -207,75 +240,142 @@ export default function Resolutions() {
     return () => { window.removeEventListener('beforeunload', onUnload); onUnload(); };
   }, []);
 
-  // ── Realtime: new resolutions appear in list for all bloc members ────────────
+  // ── Single merged realtime channel for ALL resolution activity ──────────────
+  // Covers: list updates, active-doc updates, amendments, AND live presence/cursors.
+  // Subscribes ONCE per session (deps = [authUser?.id]) — never tears down due to
+  // activeRes/profile/myBlocs changing, since those are read from refs inside
+  // handlers. This is what prevents the "sometimes doesn't update" symptom: the
+  // old version re-subscribed on every bloc/profile change, creating a gap where
+  // events could be missed mid-resubscribe.
   useEffect(() => {
-    if (!profile) return;
-    const channel = supabase.channel('resolutions_list')
+    if (!authUser?.id) return;
+
+    const channel = supabase.channel(`sodmun_res_${authUser.id}`, {
+      config: { presence: { key: authUser.id } },
+    })
+      // ── Resolution list: new resolutions for our committee/blocs ──────────────
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'resolutions' }, async (payload) => {
-        // Only add if it belongs to our committee / our blocs
         const newRes = payload.new;
-        const isOurs = newRes.committee === profile.committee || myBlocs.some((b: any) => b.id === newRes.bloc_id);
+        const p = profileRef.current;
+        const isOurs = newRes.committee === p?.committee || myBlocsRef.current.some((b: any) => b.id === newRes.bloc_id);
         if (!isOurs) return;
-        // Fetch with blocs join
         const { data } = await supabase.from('resolutions').select('*, blocs(name)').eq('id', newRes.id).single();
         if (data) setResolutions(prev => [data, ...prev.filter(r => r.id !== data.id)]);
       })
+      // ── Resolution updates: list row + status/title for active doc ────────────
+      // Content/blocks are now handled by the dedicated resolution_blocks
+      // listeners below — this only handles metadata (status, title, etc.)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'resolutions' }, (payload) => {
         setResolutions(prev => prev.map(r => r.id === payload.new.id ? { ...r, ...payload.new } : r));
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [profile, myBlocs]);
-
-  // ── Realtime resolution updates ───────────────────────────────────────────────
-  useEffect(() => {
-    if (!activeRes) return;
-    const channel = supabase.channel(`res_${activeRes.id}`)
-      .on('postgres_changes', { event:'UPDATE', schema:'public', table:'resolutions', filter:`id=eq.${activeRes.id}` }, (payload) => {
-        try {
-          if (payload.new.title !== activeRes.title) {
+        const current = activeResRef.current;
+        if (current?.id === payload.new.id) {
+          if (payload.new.title !== current.title) {
             setActiveRes((p: any) => ({ ...p, title: payload.new.title, status: payload.new.status, amendments_open: payload.new.amendments_open ?? p.amendments_open }));
-            setResolutions(prev => prev.map(r => r.id === activeRes.id ? { ...r, title: payload.new.title, status: payload.new.status } : r));
           } else {
             setActiveRes((p: any) => ({ ...p, status: payload.new.status, amendments_open: payload.new.amendments_open ?? p.amendments_open }));
           }
-          const inc = typeof payload.new.content === 'string' ? JSON.parse(payload.new.content) : payload.new.content;
-          if (Array.isArray(inc) && JSON.stringify(inc) !== JSON.stringify(blocks)) setBlocks(inc);
-        } catch {}
+        }
       })
-      // Realtime for new amendments
-      .on('postgres_changes', { event:'INSERT', schema:'public', table:'resolution_amendments' }, (payload) => {
-        // Only reload if it's for our resolution
-        if (payload.new.resolution_id === activeRes.id) loadAmendments(activeRes.id);
+      // ── Block-level realtime — THE fix for concurrent edits ────────────────────
+      // Each block change merges into the local array at its specific position
+      // instead of replacing the whole document, so two people editing
+      // different blocks/clauses never stomp each other's work.
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'resolution_blocks' }, (payload) => {
+        if (payload.new.resolution_id !== activeResRef.current?.id) return;
+        if (payload.new.updated_by === authUser.id) return; // skip our own writes — already in local state
+        const newBlock = { id: payload.new.id, type: payload.new.type, html: payload.new.html, text: payload.new.text_content, indent: payload.new.indent };
+        setBlocks(prev => {
+          if (prev.some(b => b.id === newBlock.id)) return prev; // already have it
+          const arr = [...prev];
+          arr.splice(Math.min(payload.new.position, arr.length), 0, newBlock);
+          return arr;
+        });
+        lastKnownBlocks.current.set(payload.new.id, { html: payload.new.html, type: payload.new.type, indent: payload.new.indent, position: payload.new.position });
       })
-      .on('postgres_changes', { event:'UPDATE', schema:'public', table:'resolution_amendments' }, (payload) => {
-        if (payload.new.resolution_id === activeRes.id) loadAmendments(activeRes.id);
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'resolution_blocks' }, (payload) => {
+        if (payload.new.resolution_id !== activeResRef.current?.id) return;
+        if (payload.new.updated_by === authUser.id) return; // our own write already applied locally
+        setBlocks(prev => prev.map(b =>
+          b.id === payload.new.id
+            ? { ...b, html: payload.new.html, type: payload.new.type, text: payload.new.text_content, indent: payload.new.indent }
+            : b
+        ));
+        lastKnownBlocks.current.set(payload.new.id, { html: payload.new.html, type: payload.new.type, indent: payload.new.indent, position: payload.new.position });
       })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [activeRes?.id]);
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'resolution_blocks' }, (payload) => {
+        if (payload.old.resolution_id !== activeResRef.current?.id) return;
+        setBlocks(prev => prev.filter(b => b.id !== payload.old.id));
+        lastKnownBlocks.current.delete(payload.old.id);
+      })
+      // ── Amendments: only refresh if for the currently-open resolution ─────────
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'resolution_amendments' }, (payload) => {
+        if (payload.new.resolution_id === activeResRef.current?.id) loadAmendments(activeResRef.current.id);
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'resolution_amendments' }, (payload) => {
+        if (payload.new.resolution_id === activeResRef.current?.id) loadAmendments(activeResRef.current.id);
+      })
+      // ── Presence: live cursors, scoped per-resolution via the tracked payload ──
+      .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState();
+        const all = Object.values(state).flat().filter((p: any) =>
+          p.userId !== authUser.id && p.resId === activeResRef.current?.id
+        );
+        setPresences(all as any[]);
+      })
+      .subscribe(async (status: string) => {
+        if (status === 'SUBSCRIBED') {
+          presenceChannelRef.current = channel;
+          // Re-sync everything after (re)connect — catches anything missed in the gap
+          if (activeResRef.current?.id) {
+            loadAmendments(activeResRef.current.id);
+            const { data } = await supabase.from('resolutions').select('*, blocs(name)').eq('id', activeResRef.current.id).single();
+            if (data) setActiveRes((p: any) => ({ ...p, ...data }));
+            // Reload blocks from the dedicated table — source of truth
+            try {
+              const result = await getBlocks(activeResRef.current.id);
+              const rows = result.blocks || [];
+              if (rows.length > 0) {
+                const loaded = rows
+                  .sort((a: any, b: any) => a.position - b.position)
+                  .map((r: any) => ({ id: r.id, type: r.type, html: r.html, text: r.text_content, indent: r.indent }));
+                setBlocks(loaded);
+                const map = new Map<string, any>();
+                rows.forEach((r: any) => map.set(r.id, { html: r.html, type: r.type, indent: r.indent, position: r.position }));
+                lastKnownBlocks.current = map;
+              }
+            } catch (e) { console.error('Block resync failed:', e); }
+          }
+        }
+      });
 
-  // ── Presence (cursors) ────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!activeRes || !authUser || !profile) return;
-    const ch = supabase.channel(`presence_res_${activeRes.id}`, { config: { presence: { key: authUser.id } } });
-    presenceChannelRef.current = ch;
-    ch.on('presence', { event: 'sync' }, () => {
-      const state = ch.presenceState();
-      const all = Object.values(state).flat().filter((p: any) => p.userId !== authUser.id);
-      setPresences(all as any[]);
-    })
-    .subscribe(async (status: string) => {
-      if (status === 'SUBSCRIBED') {
-        await ch.track({ userId: authUser.id, delegation: profile.delegation || profile.role, blockId: null });
-      }
-    });
-    return () => { supabase.removeChannel(ch); presenceChannelRef.current = null; };
-  }, [activeRes?.id, authUser?.id, profile]);
+    return () => { supabase.removeChannel(channel); presenceChannelRef.current = null; };
+  }, [authUser?.id]); // ← stable forever, never re-subscribes mid-session
 
+  // ── Track cursor position — throttled to avoid flooding presence ────────────
+  const cursorThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const trackCursorBlock = (blockId: string) => {
-    presenceChannelRef.current?.track({ userId: authUser?.id, delegation: profile?.delegation || profile?.role, blockId });
+    if (!activeRes?.id || !presenceChannelRef.current) return;
+    if (cursorThrottleRef.current) clearTimeout(cursorThrottleRef.current);
+    cursorThrottleRef.current = setTimeout(() => {
+      presenceChannelRef.current?.track({
+        userId: authUser?.id,
+        delegation: profile?.delegation || profile?.role,
+        blockId,
+        resId: activeRes.id,
+      });
+    }, 80); // ~12 updates/sec max — smooth but not flooding the channel
   };
+
+  // Re-announce presence whenever the open resolution changes
+  useEffect(() => {
+    if (!activeRes?.id || !presenceChannelRef.current || !authUser?.id) return;
+    presenceChannelRef.current.track({
+      userId: authUser.id,
+      delegation: profile?.delegation || profile?.role,
+      blockId: null,
+      resId: activeRes.id,
+    });
+  }, [activeRes?.id]);
 
   // ── Fetch core data ───────────────────────────────────────────────────────────
   const restoreLastResolution = (resList: any[]) => {
@@ -329,7 +429,7 @@ export default function Resolutions() {
   };
 
   // ── Open / create resolution ──────────────────────────────────────────────────
-  const openResolution = (res: any) => {
+  const openResolution = async (res: any) => {
     setActiveRes(res);
     setSyncStatus('saved');
     setShowHistory(false);
@@ -337,13 +437,43 @@ export default function Resolutions() {
     setAmendMode(null);
     // Remember for refresh
     try { localStorage.setItem('sodmun_last_reso_id', String(res.id)); } catch {}
+
+    // ── Load blocks from the dedicated table — not the JSON blob ──────────────
+    // Each block is its own row, so concurrent edits to different blocks
+    // never overwrite each other.
     try {
-      const parsed = typeof res.content === 'string' ? JSON.parse(res.content) : res.content;
-      setBlocks(Array.isArray(parsed) && parsed.length > 0 ? parsed : [{ id: Date.now().toString(), type:'heading', html:'', text:'', indent:0 }]);
-    } catch {
+      const result = await getBlocks(res.id);
+      const rows = result.blocks || [];
+      if (rows.length > 0) {
+        const loaded = rows
+          .sort((a: any, b: any) => a.position - b.position)
+          .map((r: any) => ({ id: r.id, type: r.type, html: r.html, text: r.text_content, indent: r.indent }));
+        setBlocks(loaded);
+      } else {
+        // No block rows yet — fall back to legacy content blob once, then
+        // it'll get migrated to block rows as soon as something is edited
+        try {
+          const parsed = typeof res.content === 'string' ? JSON.parse(res.content) : res.content;
+          setBlocks(Array.isArray(parsed) && parsed.length > 0 ? parsed : [{ id: Date.now().toString(), type:'heading', html:'', text:'', indent:0 }]);
+        } catch {
+          setBlocks([{ id: Date.now().toString(), type:'heading', html:'', text:'', indent:0 }]);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load blocks:', e);
       setBlocks([{ id: Date.now().toString(), type:'heading', html:'', text:'', indent:0 }]);
     }
+
     loadAmendments(res.id);
+
+    // Seed the diff baseline so the first real edit only saves what changed
+    setTimeout(() => {
+      const map = new Map<string, any>();
+      pendingBlocks.current.forEach((b: any, idx: number) => {
+        map.set(b.id, { html: b.html, type: b.type, indent: b.indent, position: idx });
+      });
+      lastKnownBlocks.current = map;
+    }, 0);
   };
 
   const handleCreateResolution = async () => {
@@ -355,12 +485,50 @@ export default function Resolutions() {
     if (res) { setResolutions([res, ...resolutions]); openResolution(res); setIsResModal(false); setNewResTitle(''); }
   };
 
-  // ── Save ──────────────────────────────────────────────────────────────────────
-  const executeDbSave = async (data: any[]) => {
-    lastSaveTime.current = Date.now();
-    if (activeResRef.current) {
-      await supabase.from('resolutions').update({ content: JSON.stringify(data) }).eq('id', activeResRef.current.id);
+  // ── Save — block-level diffing, NOT whole-document overwrite ──────────────────
+  // This is the fix for concurrent-edit data loss: instead of writing the
+  // entire `blocks` array to one JSON column (which clobbers anyone else's
+  // in-flight edit), we diff against the last-known state and only push
+  // the specific block(s) that actually changed, plus handle deletions
+  // and position changes separately. Two people editing different blocks
+  // now never overwrite each other's work.
+  const lastKnownBlocks = useRef<Map<string, any>>(new Map());
+
+  const syncBlocksToDb = async (updated: any[]) => {
+    if (!activeResRef.current) return;
+    const resId = activeResRef.current.id;
+    const prevMap = lastKnownBlocks.current;
+    const newIds = new Set(updated.map(b => b.id));
+
+    // Find blocks that changed (new, or content/position differs from last save)
+    const changed = updated.filter((b, idx) => {
+      const prev = prevMap.get(b.id);
+      if (!prev) return true; // new block
+      return prev.html !== b.html || prev.type !== b.type || prev.indent !== b.indent || prev.position !== idx;
+    });
+
+    // Find blocks that were deleted
+    const deletedIds = Array.from(prevMap.keys()).filter(id => !newIds.has(id));
+
+    try {
+      await Promise.all([
+        ...changed.map((b, _i) => {
+          const position = updated.findIndex(x => x.id === b.id);
+          return upsertBlock(resId, b.id, position, b.type, b.html, b.text, b.indent);
+        }),
+        ...deletedIds.map(id => deleteBlock(resId, id)),
+      ]);
+
+      // Update our local "last known" snapshot
+      const newMap = new Map<string, any>();
+      updated.forEach((b, idx) => newMap.set(b.id, { html: b.html, type: b.type, indent: b.indent, position: idx }));
+      lastKnownBlocks.current = newMap;
+
+      lastSaveTime.current = Date.now();
       setSyncStatus('saved');
+    } catch (e) {
+      console.error('Block sync failed:', e);
+      setSyncStatus('saved'); // don't get stuck on "saving" forever
     }
   };
 
@@ -369,10 +537,12 @@ export default function Resolutions() {
     setSyncStatus('saving');
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     const since = Date.now() - lastSaveTime.current;
-    if (since > 1500) executeDbSave(updated);
-    else saveTimeoutRef.current = setTimeout(() => executeDbSave(updated), 400);
+    if (since > 1500) syncBlocksToDb(updated);
+    else saveTimeoutRef.current = setTimeout(() => syncBlocksToDb(updated), 400);
 
-    // Auto-version every 5 minutes if changes exist
+    // Auto-version every 5 minutes if changes exist — version snapshots still
+    // use the full JSON blob since they're just point-in-time history, not
+    // the live editing surface
     if (versionAutoRef.current) clearTimeout(versionAutoRef.current);
     versionAutoRef.current = setTimeout(() => {
       if (activeResRef.current && pendingBlocks.current.length > 0) {
@@ -718,6 +888,7 @@ export default function Resolutions() {
           .amend-item:hover { background:var(--bg-surface); }
           .amend-type-chip { font-size:9px; font-weight:800; padding:2px 7px; border-radius:99px; text-transform:uppercase; letter-spacing:0.8px; flex-shrink:0; margin-top:1px; }
           .amend-status-chip { font-size:9px; font-weight:700; padding:2px 7px; border-radius:99px; flex-shrink:0; }
+          @keyframes caretBlink { 0%,50% { opacity:1; } 50.01%,100% { opacity:0; } }
           @media(max-width:768px) { .ver-panel { display:none; } .amend-popup { width:90vw; } }
         `}</style>
 

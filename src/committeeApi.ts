@@ -141,6 +141,31 @@ export async function getResolutions(bloc_ids?: number[]) {
   // returns { resolutions: any[] }
 }
 
+// ── Block-level resolution editing — prevents concurrent overwrite ──────────────
+export async function getBlocks(resolution_id: number) {
+  return call('get_blocks', { resolution_id });
+}
+
+export async function upsertBlock(
+  resolution_id: number,
+  block_id: string,
+  position: number,
+  type: string,
+  html: string,
+  text_content: string,
+  indent: number,
+) {
+  return call('upsert_block', { resolution_id, block_id, position, type, html, text_content, indent });
+}
+
+export async function deleteBlock(resolution_id: number, block_id: string) {
+  return call('delete_block', { resolution_id, block_id });
+}
+
+export async function reorderBlocks(resolution_id: number, positions: { id: string; position: number }[]) {
+  return call('reorder_blocks', { resolution_id, positions });
+}
+
 // ── Soddy proxy ─────────────────────────────────────────────────────────────
 export async function callSoddy(messages: any[]) {
   const res = await fetch(SODDY_URL, {

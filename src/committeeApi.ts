@@ -228,6 +228,15 @@ let isLeader = false;
 let leaderLastSeen = 0;
 let tabId = Math.random().toString(36).slice(2);
 let bc: BroadcastChannel | null = null;
+// Explicit lock — prevents two near-simultaneous subscribeToMessagePoll()
+// calls (e.g. App.tsx and Chat.tsx both mounting in the same render pass)
+// from both independently triggering checkLeaderElection(). Relying on
+// listeners.size alone wasn't sufficient: two effects can each observe
+// size===1 if their .add() calls land before either's read settles,
+// which produced two overlapping election timers and, in practice, two
+// active poll loops running 3s apart from each other — visible in logs
+// as polls firing in pairs roughly 1s apart.
+let electionInProgress = false;
 // Adaptive backoff: chat traffic comes in bursts (a flurry of replies, then
 // quiet). After several consecutive empty polls, stretch the interval to
 // 6s instead of 3s — cuts sustained PG load roughly in half during the
@@ -309,8 +318,11 @@ function startLeading() {
 }
 
 function checkLeaderElection() {
+  if (electionInProgress || isLeader) return; // already running or already decided
+  electionInProgress = true;
+
   const channel = getBroadcastChannel();
-  if (!channel) { startLeading(); return; } // no BroadcastChannel support — just poll directly
+  if (!channel) { startLeading(); electionInProgress = false; return; }
 
   // Announce ourselves and wait briefly to see if another tab is already leading
   channel.postMessage({ type: 'leader-heartbeat', tabId, priority: tabPriority() });
@@ -319,6 +331,7 @@ function checkLeaderElection() {
     if (!isLeader && timeSinceLastLeaderSeen > LEADER_TIMEOUT_MS) {
       startLeading();
     }
+    electionInProgress = false;
   }, 800); // short window to detect an existing leader before claiming the role
 }
 
@@ -328,24 +341,32 @@ function checkLeaderElection() {
  * actual network poll happens per tab, and only ONE tab per browser
  * actually hits the server; other tabs get results via BroadcastChannel.
  */
+let recheckIntervalHandle: ReturnType<typeof setInterval> | null = null;
+
 export function subscribeToMessagePoll(fn: PollListener): () => void {
+  const wasEmpty = listeners.size === 0;
   listeners.add(fn);
-  if (listeners.size === 1) {
-    // First subscriber in this tab — kick off leader election
+
+  if (wasEmpty && !isLeader && !electionInProgress) {
     checkLeaderElection();
-    // Periodically re-check in case the leader tab closed
-    const recheck = setInterval(() => {
-      if (!isLeader && Date.now() - leaderLastSeen > LEADER_TIMEOUT_MS) {
+  }
+  // Single shared recheck loop, regardless of how many listeners are
+  // attached — previously each listener got its own setInterval, which
+  // could leak if listeners were added/removed in a way that didn't
+  // line up with which one's interval got cleared.
+  if (!recheckIntervalHandle) {
+    recheckIntervalHandle = setInterval(() => {
+      if (listeners.size > 0 && !isLeader && Date.now() - leaderLastSeen > LEADER_TIMEOUT_MS) {
         startLeading();
       }
     }, LEADER_TIMEOUT_MS);
-    (fn as any)._recheckInterval = recheck;
   }
+
   return () => {
     listeners.delete(fn);
     if (listeners.size === 0) {
       stopLeading();
-      if ((fn as any)._recheckInterval) clearInterval((fn as any)._recheckInterval);
+      if (recheckIntervalHandle) { clearInterval(recheckIntervalHandle); recheckIntervalHandle = null; }
     }
   };
 }

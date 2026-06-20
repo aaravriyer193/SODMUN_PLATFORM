@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './AuthContext';
 import { supabase } from './api';
+import { subscribeToMessagePoll } from './committeeApi';
 import Login from './Login';
 import Dashboard from './Dashboard';
 import Chat from './Chat';
@@ -358,12 +359,16 @@ const AppShell = () => {
     } else { setRole(null); setRL(false); }
   }, [user]);
 
-  // ── Real-time message listener ──
+  // ── Notification listener — shared poller, no WebSocket ──
+  // Subscribes to the same unified cross-tab poller Chat.tsx uses. This was
+  // previously its own separate WebSocket channel (app_notifications),
+  // meaning every user held TWO connections — one for Chat, one for this.
+  // Now it's a third independent subscriber to the same single poll cycle,
+  // adding zero extra server requests.
   useEffect(() => {
     if (!user) return;
-    const channel = supabase.channel('app_notifications')
-      .on('postgres_changes', { event:'INSERT', schema:'public', table:'messages' }, async (payload) => {
-        const msg = payload.new;
+    const unsubscribe = subscribeToMessagePoll((incoming: any[]) => {
+      incoming.forEach(async (msg: any) => {
         if (msg.sender_id === user.id) return;
 
         const { data: sender } = await supabase.from('users').select('role,delegation,committee').eq('id', msg.sender_id).single();
@@ -396,10 +401,9 @@ const AppShell = () => {
         if (location.pathname !== '/chat') {
           setToasts(prev => [notif, ...prev].slice(0, 3));
         }
-      })
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
+      });
+    });
+    return unsubscribe;
   }, [user]);
 
   // ── Mark notifications read when visiting chat ──

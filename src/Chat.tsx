@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from './api';
 import { useAuth } from './AuthContext';
-import { chairGetSidebar, chairGetRoomMessages, bustSidebarCache, appendToRoomCache, checkNewMessages } from './committeeApi';
+import { chairGetSidebar, chairGetRoomMessages, bustSidebarCache, appendToRoomCache, subscribeToMessagePoll, triggerImmediatePoll } from './committeeApi';
 
 const IconGlobe   = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>;
 const IconLock    = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>;
@@ -165,66 +165,46 @@ export default function Chat() {
     } catch (e) { console.error(e); }
   };
 
-  // ── Pure polling — no WebSocket for Chat ──────────────────────────────────────
-  // Realtime WebSockets were removed entirely from Chat. With Supabase
-  // realtime already running at ~1s latency from this region, and a 700+
-  // concurrent-user ceiling of 500 connections to manage, polling every
-  // 3 seconds gives a barely-noticeable UX difference while completely
-  // eliminating Chat's WebSocket connection cost. Resolutions keeps its
-  // WebSocket + poll hybrid since concurrent block-level editing benefits
-  // more from instant push than chat does.
-  const lastSeenTsRef = useRef<string>(new Date().toISOString());
-  const pollRef        = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // ── Shared polling — subscribes to the unified cross-tab poller ─────────────
+  // No private timer here. committeeApi.ts runs ONE poll per browser tab
+  // (shared with App.tsx's notification system), and only ONE tab per
+  // browser actually hits the server — other open app.sodmun.com tabs
+  // receive results via BroadcastChannel for free. This is what keeps
+  // Postgres from seeing 500+ req/sec: instead of N timers × M tabs all
+  // hitting the Edge Function independently, there's exactly one request
+  // per poll cycle per browser, system-wide.
+  const handlePollResults = useCallback((incoming: any[]) => {
+    if (incoming.length === 0) return;
 
-  const pollForMessages = useCallback(async () => {
-    try {
-      const result = await checkNewMessages(lastSeenTsRef.current);
-      const incoming = result.messages || [];
-      if (incoming.length === 0) return;
-
-      lastSeenTsRef.current = incoming[0].timestamp;
-
-      // Anything in the currently open room: refetch that room fully so
-      // ordering/dedup is handled server-side rather than stitched client-side
-      const relevantToActiveRoom = incoming.some((m: any) => m.recipient_group === activeRoomRef.current);
-      if (relevantToActiveRoom && activeRoomRef.current) {
-        await fetchMessages(activeRoomRef.current);
-      }
-
-      // Anything NOT in the active room: bump unread + play sound
-      incoming.forEach((m: any) => {
-        const rg = m.recipient_group;
-        const own = m.sender_id === authUser?.id;
-        if (rg !== activeRoomRef.current && !own) {
-          setUnreadCounts(prev => { const map = new Map(prev); map.set(rg, (map.get(rg) || 0) + 1); return map; });
-          if (soundEnabledRef.current) playNotifSound(rg?.startsWith('dm_'));
-        }
-        // New DM room discovered — refresh sidebar so it appears
-        if (rg?.startsWith('dm_') && !knownDMRooms.current.has(rg)) {
-          knownDMRooms.current.add(rg);
-          if (isChairRef.current) bustSidebarCache();
-          refreshSidebar();
-        }
-      });
-    } catch (e) {
-      console.error('Chat poll failed:', e);
+    const relevantToActiveRoom = incoming.some((m: any) => m.recipient_group === activeRoomRef.current);
+    if (relevantToActiveRoom && activeRoomRef.current) {
+      fetchMessages(activeRoomRef.current);
     }
+
+    incoming.forEach((m: any) => {
+      const rg = m.recipient_group;
+      const own = m.sender_id === authUser?.id;
+      if (rg !== activeRoomRef.current && !own) {
+        setUnreadCounts(prev => { const map = new Map(prev); map.set(rg, (map.get(rg) || 0) + 1); return map; });
+        if (soundEnabledRef.current) playNotifSound(rg?.startsWith('dm_'));
+      }
+      if (rg?.startsWith('dm_') && !knownDMRooms.current.has(rg)) {
+        knownDMRooms.current.add(rg);
+        if (isChairRef.current) bustSidebarCache();
+        refreshSidebar();
+      }
+    });
   }, [authUser?.id]);
 
-  // ── Poll loop — 3s interval, self-rescheduling ─────────────────────────────
   useEffect(() => {
     if (!authUser?.id) return;
-    let cancelled = false;
+    const unsubscribe = subscribeToMessagePoll(handlePollResults);
+    return unsubscribe;
+  }, [authUser?.id, handlePollResults]);
 
-    const loop = async () => {
-      if (cancelled) return;
-      await pollForMessages();
-      if (!cancelled) pollRef.current = setTimeout(loop, 3000);
-    };
-    pollRef.current = setTimeout(loop, 3000);
-
-    return () => { cancelled = true; if (pollRef.current) clearTimeout(pollRef.current); };
-  }, [authUser?.id, pollForMessages]);
+  // Thin wrapper kept for call sites (e.g. sendMessage) that want to nudge
+  // an immediate poll rather than waiting for the next 3s cycle
+  const pollForMessages = useCallback(() => { triggerImmediatePoll(); }, []);
 
   // ── Room locks: poll alongside messages, much less frequent (locks rarely change) ──
   useEffect(() => {

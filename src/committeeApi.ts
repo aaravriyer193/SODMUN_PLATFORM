@@ -189,3 +189,177 @@ export async function callSoddy(messages: any[]) {
   if (!res.ok) throw Object.assign(new Error(data.message || data.error || 'Soddy error'), { status: res.status, data });
   return data; // { reply, uses, limit }
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// UNIFIED MESSAGE POLLER — single source of truth for "is there anything new"
+// ════════════════════════════════════════════════════════════════════════════
+//
+// Problem this solves:
+//   - Chat.tsx polls for messages every 3s
+//   - App.tsx (the shell) needs to poll for toast notifications too
+//   - If both poll independently, that's 2x requests per user for the
+//     same underlying question ("any new messages?")
+//   - If a user opens app.sodmun.com in two tabs, both tabs poll
+//     independently too — doubling THEIR load for zero benefit
+//
+// Fix:
+//   - ONE poller per browser tab, shared via a tiny pub/sub. Both
+//     Chat.tsx and App.tsx subscribe to the same result instead of
+//     each making their own request.
+//   - Cross-tab leader election via BroadcastChannel: only ONE tab
+//     per browser actually polls the server. Other tabs receive the
+//     results from the leader over BroadcastChannel, for free,
+//     with zero extra server requests.
+
+type MessagePollResult = { id: string; recipient_group: string; timestamp: string; sender_id: string };
+type PollListener = (messages: MessagePollResult[]) => void;
+
+const POLL_INTERVAL_FAST_MS = 3000;   // normal cadence — used while messages are flowing
+const POLL_INTERVAL_SLOW_MS = 6000;   // backed-off cadence — used during quiet periods
+const EMPTY_POLLS_BEFORE_BACKOFF = 5; // consecutive empty polls before slowing down
+const BC_CHANNEL_NAME = 'sodmun_message_poll';
+const LEADER_HEARTBEAT_MS = 2000;
+const LEADER_TIMEOUT_MS = 5000; // if leader hasn't pinged in this long, take over
+
+let listeners: Set<PollListener> = new Set();
+let pollTimer: ReturnType<typeof setTimeout> | null = null;
+let lastSeenTs = new Date().toISOString();
+let isLeader = false;
+let leaderLastSeen = 0;
+let tabId = Math.random().toString(36).slice(2);
+let bc: BroadcastChannel | null = null;
+// Adaptive backoff: chat traffic comes in bursts (a flurry of replies, then
+// quiet). After several consecutive empty polls, stretch the interval to
+// 6s instead of 3s — cuts sustained PG load roughly in half during the
+// quiet stretches that make up most of a conference day, while snapping
+// straight back to 3s the moment a message actually arrives.
+let consecutiveEmptyPolls = 0;
+
+function getBroadcastChannel(): BroadcastChannel | null {
+  if (typeof BroadcastChannel === 'undefined') return null; // very old browser fallback
+  if (!bc) {
+    bc = new BroadcastChannel(BC_CHANNEL_NAME);
+    bc.onmessage = (e) => {
+      const msg = e.data;
+      if (msg.type === 'leader-heartbeat' && msg.tabId !== tabId) {
+        leaderLastSeen = Date.now();
+        // If another tab is actively leading, step down
+        if (isLeader && msg.priority > tabPriority()) {
+          stopLeading();
+        }
+      }
+      if (msg.type === 'poll-result' && msg.tabId !== tabId) {
+        // Received results from the leader tab — apply locally, no request made
+        listeners.forEach(fn => fn(msg.messages));
+      }
+    };
+  }
+  return bc;
+}
+
+// Simple deterministic priority so tabs don't fight — lower wins, stable per tab
+function tabPriority(): number {
+  return parseInt(tabId, 36);
+}
+
+function stopLeading() {
+  isLeader = false;
+  if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+}
+
+async function runPoll() {
+  try {
+    const result = await checkNewMessages(lastSeenTs);
+    const incoming: MessagePollResult[] = result.messages || [];
+
+    if (incoming.length > 0) {
+      lastSeenTs = incoming[0].timestamp;
+      consecutiveEmptyPolls = 0; // burst detected — snap back to fast cadence
+    } else {
+      consecutiveEmptyPolls++;
+    }
+
+    // Always notify local listeners (even on empty result, for consistency)
+    listeners.forEach(fn => fn(incoming));
+    // Broadcast to other tabs so they don't need to poll themselves
+    getBroadcastChannel()?.postMessage({ type: 'poll-result', tabId, messages: incoming });
+  } catch (e) {
+    console.error('Unified message poll failed:', e);
+  } finally {
+    if (isLeader) {
+      const nextDelay = consecutiveEmptyPolls >= EMPTY_POLLS_BEFORE_BACKOFF
+        ? POLL_INTERVAL_SLOW_MS
+        : POLL_INTERVAL_FAST_MS;
+      pollTimer = setTimeout(runPoll, nextDelay);
+    }
+  }
+}
+
+function startLeading() {
+  if (isLeader) return;
+  isLeader = true;
+  consecutiveEmptyPolls = 0; // start fresh at fast cadence
+  console.log('[message-poller] this tab is now the leader, polling every 3s (adaptive)');
+  runPoll();
+  // Heartbeat so other tabs know a leader is active
+  const heartbeat = setInterval(() => {
+    if (!isLeader) { clearInterval(heartbeat); return; }
+    getBroadcastChannel()?.postMessage({ type: 'leader-heartbeat', tabId, priority: tabPriority() });
+  }, LEADER_HEARTBEAT_MS);
+}
+
+function checkLeaderElection() {
+  const channel = getBroadcastChannel();
+  if (!channel) { startLeading(); return; } // no BroadcastChannel support — just poll directly
+
+  // Announce ourselves and wait briefly to see if another tab is already leading
+  channel.postMessage({ type: 'leader-heartbeat', tabId, priority: tabPriority() });
+  setTimeout(() => {
+    const timeSinceLastLeaderSeen = Date.now() - leaderLastSeen;
+    if (!isLeader && timeSinceLastLeaderSeen > LEADER_TIMEOUT_MS) {
+      startLeading();
+    }
+  }, 800); // short window to detect an existing leader before claiming the role
+}
+
+/**
+ * Subscribe to new-message events. Returns an unsubscribe function.
+ * Multiple callers (Chat.tsx, App.tsx) can all subscribe — only ONE
+ * actual network poll happens per tab, and only ONE tab per browser
+ * actually hits the server; other tabs get results via BroadcastChannel.
+ */
+export function subscribeToMessagePoll(fn: PollListener): () => void {
+  listeners.add(fn);
+  if (listeners.size === 1) {
+    // First subscriber in this tab — kick off leader election
+    checkLeaderElection();
+    // Periodically re-check in case the leader tab closed
+    const recheck = setInterval(() => {
+      if (!isLeader && Date.now() - leaderLastSeen > LEADER_TIMEOUT_MS) {
+        startLeading();
+      }
+    }, LEADER_TIMEOUT_MS);
+    (fn as any)._recheckInterval = recheck;
+  }
+  return () => {
+    listeners.delete(fn);
+    if (listeners.size === 0) {
+      stopLeading();
+      if ((fn as any)._recheckInterval) clearInterval((fn as any)._recheckInterval);
+    }
+  };
+}
+
+/** Force an immediate poll outside the normal cadence — e.g. right after sending a message.
+ *  Also resets the adaptive backoff so subsequent polls run at the fast 3s
+ *  interval again instead of staying stretched out at 6s — sending a
+ *  message is a strong signal that a burst of activity is likely. */
+export function triggerImmediatePoll() {
+  consecutiveEmptyPolls = 0;
+  if (isLeader) {
+    if (pollTimer) clearTimeout(pollTimer);
+    runPoll();
+  }
+  // If not leader, the leader tab is already polling on its own cadence —
+  // nothing for this tab to do, it'll get results via BroadcastChannel
+}

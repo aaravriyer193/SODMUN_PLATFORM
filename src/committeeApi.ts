@@ -140,9 +140,29 @@ export async function reviewAmendment(amendment_id: number, amendment_status: 'a
 // the single round trip the entire idle-state Chat polling system uses —
 // the whole point being exactly one HTTP request per user per poll cycle,
 // not three.
+// ── Direct PostgREST polling — zero Edge Function invocations ───────────────
+// Previously this called the committee-api Edge Function (poll_chat action),
+// which is billed as 1 invocation per call — at 700 users polling every
+// 2-6s, that adds up to tens of millions of invocations over a multi-day
+// conference. Direct PostgREST reads are NOT billed as invocations at all,
+// only RLS-gated reads against Postgres directly. This only works because
+// the RLS policy on messages was fixed (see migration) to correctly scope
+// visibility for both delegates and chairs directly in Postgres — so the
+// client no longer needs to tell the server which rooms it can see (the
+// old blocRooms param), RLS figures that out per-row automatically.
 export async function pollChat(since: string) {
-  return call('poll_chat', { since });
-  // returns { messages: {id, recipient_group, timestamp, sender_id}[], lockedRooms: string[] }
+  const [{ data: messages }, { data: locks }] = await Promise.all([
+    supabase.from('messages')
+      .select('id, recipient_group, timestamp, sender_id')
+      .gt('timestamp', since)
+      .order('timestamp', { ascending: false })
+      .limit(20),
+    supabase.from('room_locks').select('recipient_group'),
+  ]);
+  return {
+    messages: messages || [],
+    lockedRooms: (locks || []).map((l: any) => l.recipient_group),
+  };
 }
 
 // ── Resolutions ────────────────────────────────────────────────────────────────
@@ -152,8 +172,21 @@ export async function getResolutions(bloc_ids?: number[]) {
 }
 
 // ── Block-level resolution editing — prevents concurrent overwrite ──────────────
+// getBlocks switched to direct PostgREST (same invocation-cost reasoning as
+// pollChat above) — this is called every 2-6s per open resolution as the
+// polling fallback, so it's the other high-frequency read worth moving off
+// the Edge Function. upsertBlock/deleteBlock remain on the Edge Function
+// since writes are infrequent relative to reads and the existing
+// service-role logic there (diff tracking, etc.) doesn't need duplicating
+// client-side.
 export async function getBlocks(resolution_id: number) {
-  return call('get_blocks', { resolution_id });
+  const { data, error } = await supabase
+    .from('resolution_blocks')
+    .select('*')
+    .eq('resolution_id', resolution_id)
+    .order('position', { ascending: true });
+  if (error) throw error;
+  return { blocks: data || [] };
 }
 
 export async function upsertBlock(

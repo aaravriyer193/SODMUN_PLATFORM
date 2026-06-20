@@ -220,12 +220,13 @@ export default function Resolutions() {
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const titleTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
   const versionAutoRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastKnownBlocks = useRef<Map<string, any>>(new Map());
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const isChair = profile?.role !== 'Delegate' && profile?.role !== null;
 
   useEffect(() => { pendingBlocks.current = blocks; }, [blocks]);
   useEffect(() => { profileRef.current = profile; }, [profile]);
-  useEffect(() => { myBlocsRef.current = myBlocs; }, [myBlocs]);
   useEffect(() => { myBlocsRef.current = myBlocs; }, [myBlocs]);
   useEffect(() => { activeResRef.current = activeRes; }, [activeRes]);
   useEffect(() => { if (authUser) fetchCoreData(); }, [authUser]);
@@ -429,6 +430,71 @@ export default function Resolutions() {
   };
 
   // ── Open / create resolution ──────────────────────────────────────────────────
+  // ── Polling fallback — guarantees updates land even if realtime stalls ───────
+  // Supabase's postgres_changes can silently drop events under load or after
+  // a brief idle gap, even with a stable channel subscription. This polls the
+  // blocks table every 2s while a resolution is open and merges in anything
+  // that differs from local state — a safety net underneath realtime, not a
+  // replacement for it (realtime still gives the instant feel when it works).
+  useEffect(() => {
+    if (!activeRes?.id) {
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+      return;
+    }
+
+    const poll = async () => {
+      try {
+        const result = await getBlocks(activeRes.id);
+        const rows: any[] = result.blocks || [];
+        if (rows.length === 0) return;
+
+        const sorted = rows.sort((a, b) => a.position - b.position);
+        const remoteIds = new Set(sorted.map(r => r.id));
+
+        setBlocks(prev => {
+          // Don't clobber a block the user is actively typing in right now
+          const focusedId = (document.activeElement as HTMLElement)?.closest?.('[data-block-id]')
+            ?.getAttribute('data-block-id');
+
+          let changed = false;
+          const merged = sorted.map(r => {
+            if (r.id === focusedId) {
+              // Keep local version for whatever block has focus
+              const local = prev.find(b => b.id === r.id);
+              if (local) return local;
+            }
+            const local = prev.find(b => b.id === r.id);
+            const remoteBlock = { id: r.id, type: r.type, html: r.html, text: r.text_content, indent: r.indent };
+            if (!local || local.html !== r.html || local.type !== r.type || local.indent !== r.indent) {
+              changed = true;
+              return remoteBlock;
+            }
+            return local;
+          });
+
+          // Catch local blocks that no longer exist remotely (rare, but covers
+          // a delete that came through polling instead of realtime)
+          const finalBlocks = merged.filter(b => remoteIds.has(b.id) || b.id === focusedId);
+          if (finalBlocks.length !== prev.length) changed = true;
+
+          if (!changed) return prev; // no-op, avoids needless re-render
+          return finalBlocks;
+        });
+
+        // Keep the diff baseline in sync so commitBlocks doesn't re-push
+        // things that just arrived via polling
+        const map = new Map<string, any>();
+        sorted.forEach(r => map.set(r.id, { html: r.html, type: r.type, indent: r.indent, position: r.position }));
+        lastKnownBlocks.current = map;
+      } catch (e) {
+        // Silent — this is a background safety net, don't surface errors for it
+      }
+    };
+
+    pollIntervalRef.current = setInterval(poll, 2000);
+    return () => { if (pollIntervalRef.current) clearInterval(pollIntervalRef.current); };
+  }, [activeRes?.id]);
+
   const openResolution = async (res: any) => {
     setActiveRes(res);
     setSyncStatus('saved');
@@ -492,7 +558,6 @@ export default function Resolutions() {
   // the specific block(s) that actually changed, plus handle deletions
   // and position changes separately. Two people editing different blocks
   // now never overwrite each other's work.
-  const lastKnownBlocks = useRef<Map<string, any>>(new Map());
 
   const syncBlocksToDb = async (updated: any[]) => {
     if (!activeResRef.current) return;

@@ -189,8 +189,23 @@ export default function Chat() {
   // this is normal/expected, not an error), 'blocked' (yellow, WS was
   // refused/dropped and won't recover, e.g. connection cap hit — polling
   // is the only sync path for the rest of this session)
-  const [connectionStatus, setConnectionStatus] = useState<'live' | 'idle' | 'blocked'>('live');
+  // 'connecting' = initial state before first connection attempt resolves
+  // 'live'       = WebSocket connected, instant push
+  // 'idle'       = deliberately disconnected after 30s inactivity (normal)
+  // 'blocked'    = WS refused/dropped and won't recover, polling is permanent
+  const [connectionStatus, setConnectionStatusState] = useState<'connecting' | 'live' | 'idle' | 'blocked'>('connecting');
   const wsBlockedRef = useRef(false);
+  const connectionStatusRef = useRef<'connecting' | 'live' | 'idle' | 'blocked'>('connecting');
+
+  // Single writer for connection status — keeps the ref (for synchronous
+  // reads inside callbacks) and the state (for the UI) always in sync,
+  // and logs every transition so the behavior is verifiable in devtools.
+  const setStatus = useCallback((next: 'connecting' | 'live' | 'idle' | 'blocked') => {
+    if (connectionStatusRef.current === next) return; // no-op, avoid spam
+    console.log(`[chat-connection] ${connectionStatusRef.current} → ${next}`);
+    connectionStatusRef.current = next;
+    setConnectionStatusState(next);
+  }, []);
 
   const markActivity = useCallback(() => { lastActivityRef.current = Date.now(); }, []);
 
@@ -258,7 +273,7 @@ export default function Chat() {
           wsBlockedRef.current = false;
           idleChannelRef.current = channel;
           lastActivityRef.current = Date.now();
-          setConnectionStatus('live');
+          setStatus('live');
           // Re-sync everything on (re)connect — catches anything missed
           // during the gap, including the disconnected polling window
           if (activeRoomRef.current) fetchMessages(activeRoomRef.current);
@@ -271,10 +286,10 @@ export default function Chat() {
           // polling fallback below becomes the permanent sync path.
           wsConnectedRef.current = false;
           wsBlockedRef.current = true;
-          setConnectionStatus('blocked');
+          setStatus('blocked');
         }
       });
-  }, [authUser?.id, markActivity]);
+  }, [authUser?.id, markActivity, setStatus]);
 
   const disconnectWS = useCallback(() => {
     if (!wsConnectedRef.current) return;
@@ -283,12 +298,13 @@ export default function Chat() {
       idleChannelRef.current = null;
     }
     wsConnectedRef.current = false;
-    setConnectionStatus('idle');
-  }, []);
+    setStatus('idle');
+  }, [setStatus]);
 
   // ── Idle watchdog: disconnect WS after 30s of no activity ─────────────────────
   useEffect(() => {
     if (!authUser?.id) return;
+    setStatus('connecting');
     connectWS();
 
     idleCheckRef.current = setInterval(() => {
@@ -299,10 +315,16 @@ export default function Chat() {
     }, 5000);
 
     return () => {
+      // Only clear the idle-check timer here — do NOT call disconnectWS().
+      // Calling it unconditionally on every cleanup (including React's
+      // double-invoke in StrictMode, or any incidental re-run of this
+      // effect) was killing the WebSocket the instant it connected,
+      // which is exactly why the dot got stuck and never reflected
+      // reality. Disconnection should ONLY happen from genuine 30s
+      // inactivity, detected by the interval above.
       if (idleCheckRef.current) clearInterval(idleCheckRef.current);
-      disconnectWS();
     };
-  }, [authUser?.id, connectWS, disconnectWS]);
+  }, [authUser?.id, connectWS, disconnectWS, setStatus]);
 
   // ── Lightweight polling fallback while WS is disconnected (idle OR blocked) ───
   // Cheap query: only checks for messages newer than the last one we saw.
@@ -419,6 +441,7 @@ export default function Chat() {
     <div style={{ height:'100vh', display:'flex', flexDirection:'column', padding:'32px 32px 24px', gap:'20px', boxSizing:'border-box' }} className="chat-page-wrap">
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+        @keyframes connectingPulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
         .chat-shell { flex:1; display:flex; border-radius:20px; overflow:hidden; border:1px solid var(--border); box-shadow:var(--shadow-md); background:var(--bg-surface); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); min-height:0; }
         .chat-sidebar-inner { width:260px; flex-shrink:0; background:var(--bg-sidebar); border-right:1px solid var(--border); display:flex; flex-direction:column; padding:24px 16px; overflow-y:auto; }
         .chat-main-inner { flex:1; display:flex; flex-direction:column; background:var(--bg-base); min-width:0; }
@@ -460,25 +483,28 @@ export default function Chat() {
           <p style={{ color:'var(--accent)', fontWeight:600, fontSize:'12px', marginTop:'4px' }}>{profile?.committee} Network</p>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-          {/* Connection status dot — green = live WebSocket, yellow = polling */}
+          {/* Connection status dot — green = live WebSocket, yellow = polling, grey = connecting */}
           <div
             title={
               connectionStatus === 'live'
                 ? 'Connected — live updates'
                 : connectionStatus === 'idle'
                   ? 'Idle — checking for updates every 8s'
-                  : 'Live connection unavailable — syncing every 4s'
+                  : connectionStatus === 'blocked'
+                    ? 'Live connection unavailable — syncing every 4s'
+                    : 'Connecting…'
             }
             style={{ display:'flex', alignItems:'center', gap:6, background:'var(--bg-elevated)', border:'1px solid var(--border)', borderRadius:99, padding:'5px 11px' }}
           >
             <div style={{
               width:7, height:7, borderRadius:'50%',
-              background: connectionStatus === 'live' ? '#22C55E' : '#EAB308',
-              boxShadow: connectionStatus === 'live' ? '0 0 0 3px rgba(34,197,94,0.15)' : '0 0 0 3px rgba(234,179,8,0.15)',
+              background: connectionStatus === 'live' ? '#22C55E' : connectionStatus === 'connecting' ? 'var(--text-muted)' : '#EAB308',
+              boxShadow: connectionStatus === 'live' ? '0 0 0 3px rgba(34,197,94,0.15)' : connectionStatus === 'connecting' ? 'none' : '0 0 0 3px rgba(234,179,8,0.15)',
               transition: 'background 0.3s, box-shadow 0.3s',
+              animation: connectionStatus === 'connecting' ? 'connectingPulse 1s ease-in-out infinite' : 'none',
             }} />
             <span style={{ fontSize:11, fontWeight:600, color:'var(--text-muted)' }}>
-              {connectionStatus === 'live' ? 'Live' : connectionStatus === 'idle' ? 'Idle' : 'Polling'}
+              {connectionStatus === 'live' ? 'Live' : connectionStatus === 'idle' ? 'Idle' : connectionStatus === 'blocked' ? 'Polling' : 'Connecting'}
             </span>
           </div>
           {/* Sound toggle */}

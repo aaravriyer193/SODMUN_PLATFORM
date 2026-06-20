@@ -50,13 +50,28 @@ export async function chairGetSidebar(force = false) {
 
 export function bustSidebarCache() { sidebarCache = null; }
 
+// Chair message fetch — switched to direct PostgREST. Previously routed
+// through the Edge Function (get_room_messages action), which meant every
+// time a poll detected a new message in a chair's active room, it fired a
+// full Edge Function invocation just to refetch that room's messages —
+// this was the actual remaining source of invocations after pollChat and
+// getBlocks were moved off, since fetchMessages() calls this on every
+// relevant poll result. The RLS policy fixed for messages now covers
+// chairs reading any room in their committee directly, so this no longer
+// needs service role at all.
 export async function chairGetRoomMessages(recipient_group: string, force = false) {
   const now = Date.now();
   const cached = roomCache.get(recipient_group);
   if (!force && cached && now - cached.ts < ROOM_TTL) return cached.data;
-  const data = await call('get_room_messages', { recipient_group });
-  roomCache.set(recipient_group, { data, ts: now });
-  return data;
+  const { data, error } = await supabase
+    .from('messages')
+    .select('*, users(*)')
+    .eq('recipient_group', recipient_group)
+    .order('timestamp', { ascending: true });
+  if (error) throw error;
+  const result = { messages: data || [] };
+  roomCache.set(recipient_group, { data: result, ts: now });
+  return result;
 }
 
 export function appendToRoomCache(recipient_group: string, message: any) {

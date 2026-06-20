@@ -66,6 +66,7 @@ export default function Chat() {
   const [committeeUsers, setCommitteeUsers] = useState<any[]>([]);
   const [messages, setMessages]           = useState<any[]>([]);
   const [input, setInput]                 = useState('');
+  const [isSending, setIsSending]         = useState(false);
   const [activeRoom, setActiveRoom]       = useState<string>('');
   const [activeRoomName, setActiveRoomName] = useState<string>('Global Committee');
   const [isDMModal, setIsDMModal]         = useState(false);
@@ -164,228 +165,81 @@ export default function Chat() {
     } catch (e) { console.error(e); }
   };
 
-  // ── Single merged realtime channel: messages + room locks ───────────────────
-  // One WebSocket connection per user. Subscribes ONCE on mount (deps = [authUser?.id])
-  // and never tears down due to isChair/soundEnabled changes — those are read from
-  // refs inside the handler instead, so reconnects never silently drop events.
-  //
-  // ── Connection lifecycle management ──────────────────────────────────────────
-  // The WebSocket auto-disconnects after 30s of no chat activity (no new
-  // message in any room, no message sent) to free the connection slot for
-  // other users. While disconnected, a lightweight poll checks every 8s for
-  // anything new via a normal table query. The instant something arrives —
-  // or the user sends a message — the WebSocket reconnects and resumes
-  // instant push. This keeps actual concurrent connections proportional to
-  // how many people are mid-conversation right now, not how many tabs are
-  // simply open.
-  const lastActivityRef   = useRef(Date.now());
-  const wsConnectedRef    = useRef(false);
-  const idleChannelRef    = useRef<any>(null);
-  const idleCheckRef      = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pollFallbackRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastSeenTsRef     = useRef<string>(new Date().toISOString());
-  // Visible connection state for the UI dot — 'live' (green, WS connected),
-  // 'idle' (yellow, WS deliberately disconnected after 30s inactivity —
-  // this is normal/expected, not an error), 'blocked' (yellow, WS was
-  // refused/dropped and won't recover, e.g. connection cap hit — polling
-  // is the only sync path for the rest of this session)
-  // 'connecting' = initial state before first connection attempt resolves
-  // 'live'       = WebSocket connected, instant push
-  // 'idle'       = deliberately disconnected after 30s inactivity (normal)
-  // 'blocked'    = WS refused/dropped and won't recover, polling is permanent
-  const [connectionStatus, setConnectionStatusState] = useState<'connecting' | 'live' | 'idle' | 'blocked'>('connecting');
-  const wsBlockedRef = useRef(false);
-  const connectionStatusRef = useRef<'connecting' | 'live' | 'idle' | 'blocked'>('connecting');
+  // ── Pure polling — no WebSocket for Chat ──────────────────────────────────────
+  // Realtime WebSockets were removed entirely from Chat. With Supabase
+  // realtime already running at ~1s latency from this region, and a 700+
+  // concurrent-user ceiling of 500 connections to manage, polling every
+  // 3 seconds gives a barely-noticeable UX difference while completely
+  // eliminating Chat's WebSocket connection cost. Resolutions keeps its
+  // WebSocket + poll hybrid since concurrent block-level editing benefits
+  // more from instant push than chat does.
+  const lastSeenTsRef = useRef<string>(new Date().toISOString());
+  const pollRef        = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Single writer for connection status — keeps the ref (for synchronous
-  // reads inside callbacks) and the state (for the UI) always in sync,
-  // and logs every transition so the behavior is verifiable in devtools.
-  const setStatus = useCallback((next: 'connecting' | 'live' | 'idle' | 'blocked') => {
-    if (connectionStatusRef.current === next) return; // no-op, avoid spam
-    console.log(`[chat-connection] ${connectionStatusRef.current} → ${next}`);
-    connectionStatusRef.current = next;
-    setConnectionStatusState(next);
-  }, []);
+  const pollForMessages = useCallback(async () => {
+    try {
+      const result = await checkNewMessages(lastSeenTsRef.current);
+      const incoming = result.messages || [];
+      if (incoming.length === 0) return;
 
-  const markActivity = useCallback(() => { lastActivityRef.current = Date.now(); }, []);
+      lastSeenTsRef.current = incoming[0].timestamp;
 
-  const connectWS = useCallback(() => {
-    if (wsConnectedRef.current || !authUser?.id || wsBlockedRef.current) return;
+      // Anything in the currently open room: refetch that room fully so
+      // ordering/dedup is handled server-side rather than stitched client-side
+      const relevantToActiveRoom = incoming.some((m: any) => m.recipient_group === activeRoomRef.current);
+      if (relevantToActiveRoom && activeRoomRef.current) {
+        await fetchMessages(activeRoomRef.current);
+      }
 
-    const channel = supabase.channel(`sodmun_chat_${authUser.id}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async (payload) => {
-        // NOTE: markActivity() intentionally does NOT fire here unconditionally.
-        // With 25 committees all chatting, someone is always sending a message
-        // system-wide — if every insert reset the idle timer, the connection
-        // would never go idle for anyone, defeating the entire point of this
-        // mechanism (and explaining why it looked "stuck live" / dots firing
-        // "instantly" — the WS was never actually disconnecting). Activity is
-        // now only counted for messages the user can actually see arrive in
-        // their currently open room, or a relevant unread elsewhere — see
-        // the scoped markActivity() calls below instead.
-        lastSeenTsRef.current = payload.new.timestamp || payload.new.created_at || lastSeenTsRef.current;
-        const rg  = payload.new.recipient_group;
-        const own = payload.new.sender_id === authUser.id;
-        const chairNow = isChairRef.current;
-
-        if (chairNow) {
-          if (rg === activeRoomRef.current) {
-            markActivity(); // user is watching this room live — genuine activity
-            const { data: sender } = await supabase.from('users').select('*').eq('id', payload.new.sender_id).single();
-            const msg = { ...payload.new, users: sender };
-            setMessages(prev => [...prev, msg]);
-            appendToRoomCache(rg, msg);
-            scrollToBottom();
-          } else if (!own) {
-            setUnreadCounts(prev => { const m = new Map(prev); m.set(rg, (m.get(rg) || 0) + 1); return m; });
-            if (soundEnabledRef.current) playNotifSound(rg.startsWith('dm_'));
-          }
-          if (rg?.startsWith('dm_') && !knownDMRooms.current.has(rg)) {
-            knownDMRooms.current.add(rg);
-            bustSidebarCache();
-            refreshSidebar();
-          }
-          return;
+      // Anything NOT in the active room: bump unread + play sound
+      incoming.forEach((m: any) => {
+        const rg = m.recipient_group;
+        const own = m.sender_id === authUser?.id;
+        if (rg !== activeRoomRef.current && !own) {
+          setUnreadCounts(prev => { const map = new Map(prev); map.set(rg, (map.get(rg) || 0) + 1); return map; });
+          if (soundEnabledRef.current) playNotifSound(rg?.startsWith('dm_'));
         }
-
-        // Delegate path
-        const p = profileRef.current;
-        const isGlobal = rg === p?.committee;
-        const isDM     = rg?.startsWith('dm_') && rg?.includes(authUser.id);
-        const isBloc   = rg?.startsWith('bloc_');
-        if (!isGlobal && !isDM && !isBloc) return; // not relevant to this user at all
-
-        if (rg === activeRoomRef.current) {
-          markActivity(); // user is watching this room live — genuine activity
-          const { data: sender } = await supabase.from('users').select('*').eq('id', payload.new.sender_id).single();
-          setMessages(prev => [...prev, { ...payload.new, users: sender }]);
-          scrollToBottom();
-        } else if (!own) {
-          setUnreadCounts(prev => { const m = new Map(prev); m.set(rg, (m.get(rg) || 0) + 1); return m; });
-          if (soundEnabledRef.current) playNotifSound(isDM);
-        }
+        // New DM room discovered — refresh sidebar so it appears
         if (rg?.startsWith('dm_') && !knownDMRooms.current.has(rg)) {
           knownDMRooms.current.add(rg);
+          if (isChairRef.current) bustSidebarCache();
           refreshSidebar();
         }
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_locks' }, (payload) => {
-        if (payload.eventType === 'INSERT') {
-          setLockedRooms(prev => new Set([...prev, payload.new.recipient_group]));
-        } else if (payload.eventType === 'DELETE') {
-          setLockedRooms(prev => { const s = new Set(prev); s.delete(payload.old.recipient_group); return s; });
-        }
-      })
-      .subscribe((status: string) => {
-        if (status === 'SUBSCRIBED') {
-          wsConnectedRef.current = true;
-          wsBlockedRef.current = false;
-          idleChannelRef.current = channel;
-          lastActivityRef.current = Date.now();
-          setStatus('live');
-          // Re-sync everything on (re)connect — catches anything missed
-          // during the gap, including the disconnected polling window
-          if (activeRoomRef.current) fetchMessages(activeRoomRef.current);
-          if (committeeRef.current) subscribeToLocks(committeeRef.current);
-          if (profileRef.current) refreshSidebar(profileRef.current, isChairRef.current);
-          lastSeenTsRef.current = new Date().toISOString();
-        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-          // Refused or dropped and won't self-recover (e.g. 500-connection
-          // cap hit). Stop retrying the WebSocket for this session — the
-          // polling fallback below becomes the permanent sync path.
-          wsConnectedRef.current = false;
-          wsBlockedRef.current = true;
-          setStatus('blocked');
-        }
       });
-  }, [authUser?.id, markActivity, setStatus]);
-
-  const disconnectWS = useCallback(() => {
-    if (!wsConnectedRef.current) return;
-    if (idleChannelRef.current) {
-      supabase.removeChannel(idleChannelRef.current);
-      idleChannelRef.current = null;
+    } catch (e) {
+      console.error('Chat poll failed:', e);
     }
-    wsConnectedRef.current = false;
-    setStatus('idle');
-  }, [setStatus]);
+  }, [authUser?.id]);
 
-  // ── Idle watchdog: disconnect WS after 30s of no activity ─────────────────────
-  useEffect(() => {
-    if (!authUser?.id) return;
-    setStatus('connecting');
-    connectWS();
-
-    idleCheckRef.current = setInterval(() => {
-      const idleFor = Date.now() - lastActivityRef.current;
-      if (wsConnectedRef.current && idleFor > 30000) {
-        disconnectWS();
-      }
-    }, 5000);
-
-    return () => {
-      // Only clear the idle-check timer here — do NOT call disconnectWS().
-      // Calling it unconditionally on every cleanup (including React's
-      // double-invoke in StrictMode, or any incidental re-run of this
-      // effect) was killing the WebSocket the instant it connected,
-      // which is exactly why the dot got stuck and never reflected
-      // reality. Disconnection should ONLY happen from genuine 30s
-      // inactivity, detected by the interval above.
-      if (idleCheckRef.current) clearInterval(idleCheckRef.current);
-    };
-  }, [authUser?.id, connectWS, disconnectWS, setStatus]);
-
-  // ── Lightweight polling fallback while WS is disconnected (idle OR blocked) ───
-  // Cheap query: only checks for messages newer than the last one we saw.
-  // - If idle (WS deliberately closed): finding something reconnects the WS
-  //   and lets the normal realtime + resync path take over again.
-  // - If blocked (WS refused and won't recover): we can't reconnect, so we
-  //   fetch and apply the new data directly via polling instead. This is
-  //   the same role the 2s poll plays in Resolutions.tsx as a permanent
-  //   fallback when the connection cap is hit.
+  // ── Poll loop — 3s interval, self-rescheduling ─────────────────────────────
   useEffect(() => {
     if (!authUser?.id) return;
     let cancelled = false;
 
-    const poll = async () => {
+    const loop = async () => {
       if (cancelled) return;
-      if (!wsConnectedRef.current) {
-        try {
-          // Routed through the Edge Function (service role) — the previous
-          // direct supabase.from('messages') query was silently blocked by
-          // RLS for delegates (and chairs reading rooms they didn't send
-          // in), so the poll could never actually detect an incoming
-          // message and never triggered a reconnect. This is why "doesn't
-          // restart when you send or receive" was happening — receive
-          // detection was structurally broken, not just slow.
-          const result = await checkNewMessages(lastSeenTsRef.current);
-          const incoming = result.messages || [];
-          if (incoming.length > 0) {
-            lastSeenTsRef.current = incoming[0].timestamp;
-            if (wsBlockedRef.current) {
-              if (activeRoomRef.current) await fetchMessages(activeRoomRef.current);
-              if (committeeRef.current) await subscribeToLocks(committeeRef.current);
-            } else {
-              connectWS();
-            }
-          }
-        } catch (e) {
-          // Silent — background safety net, don't surface poll errors
-        }
-      }
-      // Re-schedule using the CURRENT blocked state each time, instead of
-      // baking in whatever wsBlockedRef.current happened to be when the
-      // effect first mounted (which was always `false`, so it was always
-      // stuck at the slower 8s interval even after going permanently blocked)
-      if (!cancelled) {
-        const delay = wsBlockedRef.current ? 4000 : 8000;
-        pollFallbackRef.current = setTimeout(poll, delay);
-      }
+      await pollForMessages();
+      if (!cancelled) pollRef.current = setTimeout(loop, 3000);
     };
+    pollRef.current = setTimeout(loop, 3000);
 
-    pollFallbackRef.current = setTimeout(poll, 8000);
-    return () => { cancelled = true; if (pollFallbackRef.current) clearTimeout(pollFallbackRef.current); };
-  }, [authUser?.id, connectWS]);
+    return () => { cancelled = true; if (pollRef.current) clearTimeout(pollRef.current); };
+  }, [authUser?.id, pollForMessages]);
+
+  // ── Room locks: poll alongside messages, much less frequent (locks rarely change) ──
+  useEffect(() => {
+    if (!authUser?.id || !committeeRef.current) return;
+    let cancelled = false;
+
+    const loop = async () => {
+      if (cancelled) return;
+      if (committeeRef.current) await subscribeToLocks(committeeRef.current);
+      if (!cancelled) setTimeout(loop, 10000);
+    };
+    const t = setTimeout(loop, 10000);
+
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [authUser?.id, profile?.committee]);
 
   const scrollToBottom = () => setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: 'smooth' }), 80);
 
@@ -395,11 +249,40 @@ export default function Chat() {
     if (!input.trim() || !activeRoom || isObserving || isRoomLocked) return;
     const content = input;
     setInput('');
-    markActivity();
-    // If the WS had idled out, sending a message means the user is back —
-    // reconnect immediately rather than waiting for the next poll cycle
-    if (!wsConnectedRef.current) connectWS();
-    await supabase.from('messages').insert([{ sender_id: authUser?.id, content, recipient_group: activeRoom }]);
+    setIsSending(true);
+
+    // Optimistic local bubble — shows immediately with a sending pulse so
+    // the message never feels "lost" during the gap before the next poll
+    // confirms it actually landed in the DB
+    const tempId = `temp-${Date.now()}`;
+    setMessages(prev => [...prev, {
+      id: tempId,
+      sender_id: authUser?.id,
+      content,
+      recipient_group: activeRoom,
+      timestamp: new Date().toISOString(),
+      users: profile,
+      _sending: true,
+    }]);
+    scrollToBottom();
+
+    try {
+      await supabase.from('messages').insert([{ sender_id: authUser?.id, content, recipient_group: activeRoom }]);
+      // Optimistically poll right away instead of waiting up to 3s — covers
+      // the case where the sender is in a different room than what they just
+      // posted to (e.g. just created a bloc and sent the first message).
+      // The poll's fetchMessages() will replace this temp bubble with the
+      // real row once it lands.
+      await pollForMessages();
+    } finally {
+      setIsSending(false);
+      // Safety net: if the poll somehow didn't replace it (e.g. user
+      // switched rooms mid-send), clear the sending flag after a beat
+      // so it doesn't pulse forever
+      setTimeout(() => {
+        setMessages(prev => prev.map(m => m.id === tempId ? { ...m, _sending: false } : m));
+      }, 4000);
+    }
   };
 
   const startDM = (peer: any) => {
@@ -423,8 +306,6 @@ export default function Chat() {
   const switchRoom = (id: string, name: string) => {
     setActiveRoom(id); setActiveRoomName(name); setMessages([]);
     setUnreadCounts(prev => { const m = new Map(prev); m.delete(id); return m; });
-    markActivity();
-    if (!wsConnectedRef.current) connectWS();
   };
 
   const isObserving  = isChair && activeRoom.startsWith('dm_') && !activeRoom.includes(authUser?.id ?? '');
@@ -450,9 +331,15 @@ export default function Chat() {
       items.push(
         <div key={m.id ?? i} className={`msg-wrap ${isMe ? 'me' : 'them'}`}>
           <span className="msg-sender">{m.users?.role} · {m.users?.delegation || m.users?.committee}</span>
-          <div className="msg-bubble">{m.content}</div>
-          <span style={{ fontSize:10, color:'var(--text-muted)', fontWeight:500, marginTop:3, alignSelf: isMe ? 'flex-end' : 'flex-start' }}>
-            {formatTime(m.timestamp || m.created_at)}
+          <div className={`msg-bubble ${m._sending ? 'msg-sending' : ''}`}>
+            {m.content}
+          </div>
+          <span style={{ fontSize:10, color:'var(--text-muted)', fontWeight:500, marginTop:3, alignSelf: isMe ? 'flex-end' : 'flex-start', display:'flex', alignItems:'center', gap:4 }}>
+            {m._sending ? (
+              <span className="sending-dots"><span/><span/><span/></span>
+            ) : (
+              formatTime(m.timestamp || m.created_at)
+            )}
           </span>
         </div>
       );
@@ -464,7 +351,6 @@ export default function Chat() {
     <div style={{ height:'100vh', display:'flex', flexDirection:'column', padding:'32px 32px 24px', gap:'20px', boxSizing:'border-box' }} className="chat-page-wrap">
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
-        @keyframes connectingPulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
         .chat-shell { flex:1; display:flex; border-radius:20px; overflow:hidden; border:1px solid var(--border); box-shadow:var(--shadow-md); background:var(--bg-surface); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); min-height:0; }
         .chat-sidebar-inner { width:260px; flex-shrink:0; background:var(--bg-sidebar); border-right:1px solid var(--border); display:flex; flex-direction:column; padding:24px 16px; overflow-y:auto; }
         .chat-main-inner { flex:1; display:flex; flex-direction:column; background:var(--bg-base); min-width:0; }
@@ -480,6 +366,13 @@ export default function Chat() {
         .msg-bubble { padding:10px 16px; border-radius:14px; font-size:14px; line-height:1.5; font-family:'Manrope',sans-serif; word-break:break-word; overflow-wrap:break-word; }
         .me .msg-bubble { background:var(--accent); color:#fff; border-bottom-right-radius:4px; box-shadow:0 2px 8px rgba(240,124,0,0.20); }
         .them .msg-bubble { background:var(--bg-elevated); color:var(--text-primary); border-bottom-left-radius:4px; border:1px solid var(--border); box-shadow:var(--shadow-sm); }
+        .msg-sending { opacity:0.6; animation:msgSendPulse 1.1s ease-in-out infinite; }
+        @keyframes msgSendPulse { 0%,100% { opacity:0.6; } 50% { opacity:0.95; } }
+        .sending-dots { display:inline-flex; gap:3px; align-items:center; }
+        .sending-dots span { width:3px; height:3px; border-radius:50%; background:var(--text-muted); animation:sendDotBounce 1.1s ease-in-out infinite; }
+        .sending-dots span:nth-child(2) { animation-delay:0.15s; }
+        .sending-dots span:nth-child(3) { animation-delay:0.3s; }
+        @keyframes sendDotBounce { 0%,80%,100% { opacity:0.3; transform:translateY(0); } 40% { opacity:1; transform:translateY(-2px); } }
         .plus-btn-sm { width:24px; height:24px; background:var(--accent-soft); border:1px solid var(--accent-mid); color:var(--accent); border-radius:6px; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:all 0.12s; }
         .plus-btn-sm:hover { background:var(--accent); color:#fff; }
         .sec-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; padding:0 2px; }
@@ -506,28 +399,18 @@ export default function Chat() {
           <p style={{ color:'var(--accent)', fontWeight:600, fontSize:'12px', marginTop:'4px' }}>{profile?.committee} Network</p>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-          {/* Connection status dot — green = live WebSocket, yellow = polling, grey = connecting */}
+          {/* Sync indicator — Chat runs on pure polling, no WebSocket */}
           <div
-            title={
-              connectionStatus === 'live'
-                ? 'Connected — live updates'
-                : connectionStatus === 'idle'
-                  ? 'Idle — checking for updates every 8s'
-                  : connectionStatus === 'blocked'
-                    ? 'Live connection unavailable — syncing every 4s'
-                    : 'Connecting…'
-            }
+            title="Updates sync every 3 seconds"
             style={{ display:'flex', alignItems:'center', gap:6, background:'var(--bg-elevated)', border:'1px solid var(--border)', borderRadius:99, padding:'5px 11px' }}
           >
             <div style={{
               width:7, height:7, borderRadius:'50%',
-              background: connectionStatus === 'live' ? '#22C55E' : connectionStatus === 'connecting' ? 'var(--text-muted)' : '#EAB308',
-              boxShadow: connectionStatus === 'live' ? '0 0 0 3px rgba(34,197,94,0.15)' : connectionStatus === 'connecting' ? 'none' : '0 0 0 3px rgba(234,179,8,0.15)',
-              transition: 'background 0.3s, box-shadow 0.3s',
-              animation: connectionStatus === 'connecting' ? 'connectingPulse 1s ease-in-out infinite' : 'none',
+              background: '#22C55E',
+              boxShadow: '0 0 0 3px rgba(34,197,94,0.15)',
             }} />
             <span style={{ fontSize:11, fontWeight:600, color:'var(--text-muted)' }}>
-              {connectionStatus === 'live' ? 'Live' : connectionStatus === 'idle' ? 'Idle' : connectionStatus === 'blocked' ? 'Polling' : 'Connecting'}
+              Synced
             </span>
           </div>
           {/* Sound toggle */}

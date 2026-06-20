@@ -210,7 +210,7 @@ export default function Resolutions() {
 
   // Presence (cursors)
   const [presences, setPresences]       = useState<any[]>([]);
-  const presenceChannelRef = useRef<any>(null);
+  // presenceChannelRef removed — no WebSocket, no presence channel
   const profileRef      = useRef<any>(null);
   const myBlocsRef       = useRef<any[]>([]);
 
@@ -223,10 +223,8 @@ export default function Resolutions() {
   const lastKnownBlocks = useRef<Map<string, any>>(new Map());
   const pendingSaveIds  = useRef<Set<string>>(new Set());
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // 'live' = WebSocket connected normally. 'polling' = WS was refused/dropped
-  // and won't recover (e.g. connection cap hit) — poll is the only sync path.
-  const wsBlockedRef = useRef(false);
-  const [connectionMode, setConnectionMode] = useState<'live' | 'polling'>('live');
+  // wsBlockedRef and connectionMode removed — no WebSocket exists anymore,
+  // polling is the only sync path, unconditionally
 
   const isChair = profile?.role !== 'Delegate' && profile?.role !== null;
 
@@ -247,170 +245,17 @@ export default function Resolutions() {
   }, []);
 
   // ── Single merged realtime channel for ALL resolution activity ──────────────
-  // Covers: list updates, active-doc updates, amendments, AND live presence/cursors.
-  // Subscribes ONCE per session (deps = [authUser?.id]) — never tears down due to
-  // activeRes/profile/myBlocs changing, since those are read from refs inside
-  // handlers. This is what prevents the "sometimes doesn't update" symptom: the
-  // old version re-subscribed on every bloc/profile change, creating a gap where
-  // events could be missed mid-resubscribe.
-  useEffect(() => {
-    if (!authUser?.id) return;
-
-    const channel = supabase.channel(`sodmun_res_${authUser.id}`, {
-      config: { presence: { key: authUser.id } },
-    })
-      // ── Resolution list: new resolutions for our committee/blocs ──────────────
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'resolutions' }, async (payload) => {
-        const newRes = payload.new;
-        const p = profileRef.current;
-        const isOurs = newRes.committee === p?.committee || myBlocsRef.current.some((b: any) => b.id === newRes.bloc_id);
-        if (!isOurs) return;
-        const { data } = await supabase.from('resolutions').select('*, blocs(name)').eq('id', newRes.id).single();
-        if (data) setResolutions(prev => [data, ...prev.filter(r => r.id !== data.id)]);
-      })
-      // ── Resolution updates: list row + status/title for active doc ────────────
-      // Content/blocks are now handled by the dedicated resolution_blocks
-      // listeners below — this only handles metadata (status, title, etc.)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'resolutions' }, (payload) => {
-        setResolutions(prev => prev.map(r => r.id === payload.new.id ? { ...r, ...payload.new } : r));
-        const current = activeResRef.current;
-        if (current?.id === payload.new.id) {
-          if (payload.new.title !== current.title) {
-            setActiveRes((p: any) => ({ ...p, title: payload.new.title, status: payload.new.status, amendments_open: payload.new.amendments_open ?? p.amendments_open }));
-          } else {
-            setActiveRes((p: any) => ({ ...p, status: payload.new.status, amendments_open: payload.new.amendments_open ?? p.amendments_open }));
-          }
-        }
-      })
-      // ── Block-level realtime — THE fix for concurrent edits ────────────────────
-      // Each block change merges into the local array at its specific position
-      // instead of replacing the whole document, so two people editing
-      // different blocks/clauses never stomp each other's work.
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'resolution_blocks' }, (payload) => {
-        if (payload.new.resolution_id !== activeResRef.current?.id) return;
-        if (payload.new.updated_by === authUser.id) return; // skip our own writes — already in local state
-        const newBlock = { id: payload.new.id, type: payload.new.type, html: payload.new.html, text: payload.new.text_content, indent: payload.new.indent };
-        setBlocks(prev => {
-          if (prev.some(b => b.id === newBlock.id)) return prev; // already have it
-          const arr = [...prev];
-          arr.splice(Math.min(payload.new.position, arr.length), 0, newBlock);
-          return arr;
-        });
-        lastKnownBlocks.current.set(payload.new.id, { html: payload.new.html, type: payload.new.type, indent: payload.new.indent, position: payload.new.position });
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'resolution_blocks' }, (payload) => {
-        if (payload.new.resolution_id !== activeResRef.current?.id) return;
-        if (payload.new.updated_by === authUser.id) return; // our own write already applied locally
-        setBlocks(prev => prev.map(b =>
-          b.id === payload.new.id
-            ? { ...b, html: payload.new.html, type: payload.new.type, text: payload.new.text_content, indent: payload.new.indent }
-            : b
-        ));
-        lastKnownBlocks.current.set(payload.new.id, { html: payload.new.html, type: payload.new.type, indent: payload.new.indent, position: payload.new.position });
-      })
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'resolution_blocks' }, (payload) => {
-        if (payload.old.resolution_id !== activeResRef.current?.id) return;
-        setBlocks(prev => prev.filter(b => b.id !== payload.old.id));
-        lastKnownBlocks.current.delete(payload.old.id);
-      })
-      // ── Amendments: only refresh if for the currently-open resolution ─────────
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'resolution_amendments' }, (payload) => {
-        if (payload.new.resolution_id === activeResRef.current?.id) loadAmendments(activeResRef.current.id);
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'resolution_amendments' }, (payload) => {
-        if (payload.new.resolution_id === activeResRef.current?.id) loadAmendments(activeResRef.current.id);
-      })
-      // ── Presence: live cursors, scoped per-resolution via the tracked payload ──
-      .on('presence', { event: 'sync' }, () => {
-        const state = channel.presenceState();
-        const all = Object.values(state).flat().filter((p: any) =>
-          p.userId !== authUser.id && p.resId === activeResRef.current?.id
-        );
-        setPresences(all as any[]);
-      })
-      .subscribe(async (status: string) => {
-        if (status === 'SUBSCRIBED') {
-          presenceChannelRef.current = channel;
-          wsBlockedRef.current = false;
-          setConnectionMode('live');
-          // Re-sync everything after (re)connect — catches anything missed in the gap
-          if (activeResRef.current?.id) {
-            loadAmendments(activeResRef.current.id);
-            const { data } = await supabase.from('resolutions').select('*, blocs(name)').eq('id', activeResRef.current.id).single();
-            if (data) setActiveRes((p: any) => ({ ...p, ...data }));
-            // Reload blocks from the dedicated table — source of truth
-            try {
-              const result = await getBlocks(activeResRef.current.id);
-              const rows = result.blocks || [];
-              if (rows.length > 0) {
-                const loaded = rows
-                  .sort((a: any, b: any) => a.position - b.position)
-                  .map((r: any) => ({ id: r.id, type: r.type, html: r.html, text: r.text_content, indent: r.indent }));
-                setBlocks(loaded);
-                const map = new Map<string, any>();
-                rows.forEach((r: any) => map.set(r.id, { html: r.html, type: r.type, indent: r.indent, position: r.position }));
-                lastKnownBlocks.current = map;
-              }
-            } catch (e) { console.error('Block resync failed:', e); }
-          }
-        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-          // Connection was refused or dropped and won't recover on its own
-          // (e.g. Supabase's 500-connection cap was hit). Stop relying on
-          // the WebSocket entirely for this session and lean fully on the
-          // 2s poll, which already exists as a safety net — just speed it
-          // up since it's now the ONLY sync mechanism, not a backstop.
-          wsBlockedRef.current = true;
-          setConnectionMode('polling');
-        }
-      });
-
-    return () => { supabase.removeChannel(channel); presenceChannelRef.current = null; };
-  }, [authUser?.id]); // ← stable forever, never re-subscribes mid-session
-
-  // ── Track cursor position — throttled to avoid flooding presence ────────────
-  const cursorThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const trackCursorBlock = (blockId: string) => {
-    if (!activeRes?.id || !presenceChannelRef.current) return;
-    if (cursorThrottleRef.current) clearTimeout(cursorThrottleRef.current);
-    cursorThrottleRef.current = setTimeout(() => {
-      presenceChannelRef.current?.track({
-        userId: authUser?.id,
-        delegation: profile?.delegation || profile?.role,
-        blockId,
-        resId: activeRes.id,
-      });
-    }, 80); // ~12 updates/sec max — smooth but not flooding the channel
-  };
-
-  // Re-announce presence whenever the open resolution changes — with retry,
-  // since presenceChannelRef.current may still be null if the main channel's
-  // subscribe() callback hasn't fired yet (common on first load). Without the
-  // retry, this effect silently no-ops and the user never appears present.
-  useEffect(() => {
-    if (!activeRes?.id || !authUser?.id) return;
-
-    let cancelled = false;
-    let attempts = 0;
-
-    const announce = () => {
-      if (cancelled) return;
-      if (presenceChannelRef.current) {
-        presenceChannelRef.current.track({
-          userId: authUser.id,
-          delegation: profile?.delegation || profile?.role,
-          blockId: null,
-          resId: activeRes.id,
-        });
-      } else if (attempts < 20) {
-        // Channel not ready yet — retry for up to ~4 seconds
-        attempts++;
-        setTimeout(announce, 200);
-      }
-    };
-    announce();
-
-    return () => { cancelled = true; };
-  }, [activeRes?.id, authUser?.id, profile]);
+  // ── Realtime fully removed for Resolutions ───────────────────────────────────
+  // The 2s/6s adaptive poll below is the sole sync mechanism now. In practice
+  // it feels realtime (2s is imperceptible as a delay), and removing the
+  // WebSocket eliminates an observed issue where connection attempts could
+  // spike to ~20 simultaneous connections under certain conditions, plus
+  // removes any standing connection-count cost entirely for this page.
+  // Resolution list updates, block content, and amendments are all already
+  // covered by polling (see below + getResolutions list refresh). Presence/
+  // cursors rode the same channel and are not replaced — trackCursorBlock
+  // is now a no-op.
+  const trackCursorBlock = (_blockId: string) => {};
 
   // ── Fetch core data ───────────────────────────────────────────────────────────
   const restoreLastResolution = (resList: any[]) => {
@@ -467,20 +312,41 @@ export default function Resolutions() {
   // ── Polling fallback — guarantees updates land even if realtime stalls ───────
   // Supabase's postgres_changes can silently drop events under load or after
   // a brief idle gap, even with a stable channel subscription. This polls the
-  // blocks table every 2s while a resolution is open and merges in anything
-  // that differs from local state — a safety net underneath realtime, not a
+  // blocks table while a resolution is open and merges in anything that
+  // differs from local state — a safety net underneath realtime, not a
   // replacement for it (realtime still gives the instant feel when it works).
+  //
+  // Adaptive backoff: a resolution being actively co-edited polls every 2s
+  // (the cadence proven to feel realtime). After several consecutive polls
+  // with no change — meaning no one is actively typing, locally or
+  // remotely — it stretches to 6s instead, cutting sustained load roughly
+  // 3x during the long quiet stretches that make up most of a document's
+  // open-but-idle time, while snapping straight back to 2s the moment any
+  // edit (yours or theirs) is detected.
+  const POLL_FAST_MS = 2000;
+  const POLL_SLOW_MS = 6000;
+  const EMPTY_POLLS_BEFORE_SLOW = 4; // ~8s of no changes before backing off
+  const consecutiveUnchangedPolls = useRef(0);
+
   useEffect(() => {
     if (!activeRes?.id) {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
       return;
     }
 
+    let cancelled = false;
+    consecutiveUnchangedPolls.current = 0;
+
     const poll = async () => {
+      if (cancelled) return;
+      let sawChange = false;
       try {
         const result = await getBlocks(activeRes.id);
         const rows: any[] = result.blocks || [];
-        if (rows.length === 0) return;
+        if (rows.length === 0) {
+          scheduleNext();
+          return;
+        }
 
         const sorted = rows.sort((a, b) => a.position - b.position);
         const remoteIds = new Set(sorted.map(r => r.id));
@@ -518,6 +384,7 @@ export default function Resolutions() {
           );
           if (finalBlocks.length !== prev.length) changed = true;
 
+          sawChange = changed;
           if (!changed) return prev; // no-op, avoids needless re-render
           return finalBlocks;
         });
@@ -535,10 +402,28 @@ export default function Resolutions() {
       } catch (e) {
         // Silent — this is a background safety net, don't surface errors for it
       }
+      scheduleNext();
+
+      function scheduleNext() {
+        if (cancelled) return;
+        // Also treat a pending local save as "active" — don't back off
+        // while the user is mid-edit even if the poll itself saw no
+        // remote change yet (their own keystrokes count as activity)
+        const userIsActivelyEditing = pendingSaveIds.current.size > 0;
+        if (sawChange || userIsActivelyEditing) {
+          consecutiveUnchangedPolls.current = 0;
+        } else {
+          consecutiveUnchangedPolls.current++;
+        }
+        const nextDelay = consecutiveUnchangedPolls.current >= EMPTY_POLLS_BEFORE_SLOW
+          ? POLL_SLOW_MS
+          : POLL_FAST_MS;
+        pollIntervalRef.current = setTimeout(poll, nextDelay);
+      }
     };
 
-    pollIntervalRef.current = setInterval(poll, 2000);
-    return () => { if (pollIntervalRef.current) clearInterval(pollIntervalRef.current); };
+    pollIntervalRef.current = setTimeout(poll, POLL_FAST_MS);
+    return () => { cancelled = true; if (pollIntervalRef.current) clearTimeout(pollIntervalRef.current); };
   }, [activeRes?.id]);
 
   const openResolution = async (res: any) => {
@@ -1035,12 +920,6 @@ export default function Resolutions() {
                 <div style={{ width:8, height:8, borderRadius:'50%', background:syncStatus==='saved'?'#22C55E':'var(--accent)', transition:'background 0.3s' }} />
                 <span style={{ fontSize:12, color:'var(--text-muted)', fontWeight:500 }}>{syncStatus==='saved'?'All changes saved':'Saving…'}</span>
               </div>
-              {connectionMode === 'polling' && (
-                <div title="Live connection unavailable — syncing every 2 seconds instead" style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(234,179,8,0.10)', border:'1px solid rgba(234,179,8,0.25)', borderRadius:99, padding:'3px 10px' }}>
-                  <div style={{ width:7, height:7, borderRadius:'50%', background:'#EAB308' }} />
-                  <span style={{ fontSize:11, color:'#A16207', fontWeight:600 }}>Syncing every 2s</span>
-                </div>
-              )}
               {/* Presence indicators */}
               {presences.length > 0 && (
                 <div style={{ display:'flex', gap:4 }}>

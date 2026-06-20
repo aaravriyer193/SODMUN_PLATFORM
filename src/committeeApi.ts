@@ -135,12 +135,14 @@ export async function reviewAmendment(amendment_id: number, amendment_status: 'a
   return call('resolution_action', { op: 'review_amendment', amendment_id, amendment_status });
 }
 
-// ── Lightweight message polling — used by Chat.tsx's idle/blocked fallback ───
-// Properly scoped per-role via the Edge Function (bypasses RLS gaps that
-// silently broke the old direct-table poll for delegates).
-export async function checkNewMessages(since: string) {
-  return call('check_new_messages', { since });
-  // returns { messages: { id, recipient_group, timestamp, sender_id }[] }
+// ── Unified chat poll — messages AND room locks in ONE request ──────────────
+// Replaces checkNewMessages + the separate room_locks client query. This is
+// the single round trip the entire idle-state Chat polling system uses —
+// the whole point being exactly one HTTP request per user per poll cycle,
+// not three.
+export async function pollChat(since: string) {
+  return call('poll_chat', { since });
+  // returns { messages: {id, recipient_group, timestamp, sender_id}[], lockedRooms: string[] }
 }
 
 // ── Resolutions ────────────────────────────────────────────────────────────────
@@ -212,11 +214,11 @@ export async function callSoddy(messages: any[]) {
 //     with zero extra server requests.
 
 type MessagePollResult = { id: string; recipient_group: string; timestamp: string; sender_id: string };
-type PollListener = (messages: MessagePollResult[]) => void;
+type PollListener = (messages: MessagePollResult[], lockedRooms: string[] | null) => void;
 
 const POLL_INTERVAL_FAST_MS = 3000;   // normal cadence — used while messages are flowing
-const POLL_INTERVAL_SLOW_MS = 6000;   // backed-off cadence — used during quiet periods
-const EMPTY_POLLS_BEFORE_BACKOFF = 5; // consecutive empty polls before slowing down
+const POLL_INTERVAL_SLOW_MS = 5000;   // idle cadence — the explicit "one request per user every 5s" target
+const EMPTY_POLLS_BEFORE_BACKOFF = 3; // consecutive empty polls before backing off (was 5 — now backs off after ~9s of quiet instead of ~15s)
 const BC_CHANNEL_NAME = 'sodmun_message_poll';
 const LEADER_HEARTBEAT_MS = 2000;
 const LEADER_TIMEOUT_MS = 5000; // if leader hasn't pinged in this long, take over
@@ -259,7 +261,7 @@ function getBroadcastChannel(): BroadcastChannel | null {
       }
       if (msg.type === 'poll-result' && msg.tabId !== tabId) {
         // Received results from the leader tab — apply locally, no request made
-        listeners.forEach(fn => fn(msg.messages));
+        listeners.forEach(fn => fn(msg.messages, msg.lockedRooms || null));
       }
     };
   }
@@ -278,8 +280,13 @@ function stopLeading() {
 
 async function runPoll() {
   try {
-    const result = await checkNewMessages(lastSeenTs);
+    // ONE request — messages AND room locks together. This is the actual
+    // fix for "one request per user every 5s while idle": previously this
+    // alone was 2 separate Edge Function calls (check_new_messages +
+    // a client-side room_locks query outside the unified poller entirely).
+    const result = await pollChat(lastSeenTs);
     const incoming: MessagePollResult[] = result.messages || [];
+    const lockedRooms: string[] = result.lockedRooms || [];
 
     if (incoming.length > 0) {
       lastSeenTs = incoming[0].timestamp;
@@ -289,9 +296,9 @@ async function runPoll() {
     }
 
     // Always notify local listeners (even on empty result, for consistency)
-    listeners.forEach(fn => fn(incoming));
+    listeners.forEach(fn => fn(incoming, lockedRooms));
     // Broadcast to other tabs so they don't need to poll themselves
-    getBroadcastChannel()?.postMessage({ type: 'poll-result', tabId, messages: incoming });
+    getBroadcastChannel()?.postMessage({ type: 'poll-result', tabId, messages: incoming, lockedRooms });
   } catch (e) {
     console.error('Unified message poll failed:', e);
   } finally {

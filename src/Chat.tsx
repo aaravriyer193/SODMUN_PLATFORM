@@ -129,13 +129,13 @@ export default function Chat() {
       setActiveRoomName('Global Committee');
     }
 
-    await Promise.all([refreshSidebar(userData, chair), subscribeToLocks(userData.committee)]);
-  };
-
-  // ── Room locks: initial load only — realtime merged into main channel ────────
-  const subscribeToLocks = async (committee: string) => {
-    const { data: locks } = await supabase.from('room_locks').select('recipient_group').eq('committee', committee);
-    if (locks) setLockedRooms(new Set(locks.map((l: any) => l.recipient_group)));
+    // Room locks are no longer fetched separately here — the unified
+    // poller's first cycle (which fires within ~1s of mount) carries
+    // lockedRooms bundled with every message poll. This removes what
+    // used to be a guaranteed extra request on every single poll cycle
+    // (room_locks?select=recipient_group firing in lockstep with
+    // messages every few seconds), now it's zero additional requests.
+    await refreshSidebar(userData, chair);
   };
 
   // ── Sidebar ───────────────────────────────────────────────────────────────
@@ -188,11 +188,17 @@ export default function Chat() {
   // No private timer here. committeeApi.ts runs ONE poll per browser tab
   // (shared with App.tsx's notification system), and only ONE tab per
   // browser actually hits the server — other open app.sodmun.com tabs
-  // receive results via BroadcastChannel for free. This is what keeps
-  // Postgres from seeing 500+ req/sec: instead of N timers × M tabs all
-  // hitting the Edge Function independently, there's exactly one request
-  // per poll cycle per browser, system-wide.
-  const handlePollResults = useCallback((incoming: any[]) => {
+  // receive results via BroadcastChannel for free. Each poll now returns
+  // BOTH messages and room locks in a single request (see poll_chat in
+  // committee-api), so there's exactly one HTTP round trip per poll
+  // cycle, system-wide — not the 2-3 separate requests it used to be.
+  const handlePollResults = useCallback((incoming: any[], lockedRoomsList: string[] | null) => {
+    // Apply lock state on every poll, even if no new messages — locks can
+    // change independently of message traffic (a chair pausing a quiet room)
+    if (lockedRoomsList !== null) {
+      setLockedRooms(new Set(lockedRoomsList));
+    }
+
     if (incoming.length === 0) return;
 
     const relevantToActiveRoom = incoming.some((m: any) => m.recipient_group === activeRoomRef.current);
@@ -225,20 +231,11 @@ export default function Chat() {
   // an immediate poll rather than waiting for the next 3s cycle
   const pollForMessages = useCallback(() => { triggerImmediatePoll(); }, []);
 
-  // ── Room locks: poll alongside messages, much less frequent (locks rarely change) ──
-  useEffect(() => {
-    if (!authUser?.id || !committeeRef.current) return;
-    let cancelled = false;
-
-    const loop = async () => {
-      if (cancelled) return;
-      if (committeeRef.current) await subscribeToLocks(committeeRef.current);
-      if (!cancelled) setTimeout(loop, 10000);
-    };
-    const t = setTimeout(loop, 10000);
-
-    return () => { cancelled = true; clearTimeout(t); };
-  }, [authUser?.id, profile?.committee]);
+  // Room locks no longer have their own polling loop — they're bundled
+  // into every poll_chat response via handlePollResults above. This
+  // removes what used to be a guaranteed extra request every 10s, on
+  // top of the message poll, system-wide. One poller, one request,
+  // both pieces of data.
 
   const scrollToBottom = () => setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: 'smooth' }), 80);
 

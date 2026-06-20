@@ -223,6 +223,10 @@ export default function Resolutions() {
   const lastKnownBlocks = useRef<Map<string, any>>(new Map());
   const pendingSaveIds  = useRef<Set<string>>(new Set());
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // 'live' = WebSocket connected normally. 'polling' = WS was refused/dropped
+  // and won't recover (e.g. connection cap hit) — poll is the only sync path.
+  const wsBlockedRef = useRef(false);
+  const [connectionMode, setConnectionMode] = useState<'live' | 'polling'>('live');
 
   const isChair = profile?.role !== 'Delegate' && profile?.role !== null;
 
@@ -327,6 +331,8 @@ export default function Resolutions() {
       .subscribe(async (status: string) => {
         if (status === 'SUBSCRIBED') {
           presenceChannelRef.current = channel;
+          wsBlockedRef.current = false;
+          setConnectionMode('live');
           // Re-sync everything after (re)connect — catches anything missed in the gap
           if (activeResRef.current?.id) {
             loadAmendments(activeResRef.current.id);
@@ -347,6 +353,14 @@ export default function Resolutions() {
               }
             } catch (e) { console.error('Block resync failed:', e); }
           }
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          // Connection was refused or dropped and won't recover on its own
+          // (e.g. Supabase's 500-connection cap was hit). Stop relying on
+          // the WebSocket entirely for this session and lean fully on the
+          // 2s poll, which already exists as a safety net — just speed it
+          // up since it's now the ONLY sync mechanism, not a backstop.
+          wsBlockedRef.current = true;
+          setConnectionMode('polling');
         }
       });
 
@@ -1021,6 +1035,12 @@ export default function Resolutions() {
                 <div style={{ width:8, height:8, borderRadius:'50%', background:syncStatus==='saved'?'#22C55E':'var(--accent)', transition:'background 0.3s' }} />
                 <span style={{ fontSize:12, color:'var(--text-muted)', fontWeight:500 }}>{syncStatus==='saved'?'All changes saved':'Saving…'}</span>
               </div>
+              {connectionMode === 'polling' && (
+                <div title="Live connection unavailable — syncing every 2 seconds instead" style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(234,179,8,0.10)', border:'1px solid rgba(234,179,8,0.25)', borderRadius:99, padding:'3px 10px' }}>
+                  <div style={{ width:7, height:7, borderRadius:'50%', background:'#EAB308' }} />
+                  <span style={{ fontSize:11, color:'#A16207', fontWeight:600 }}>Syncing every 2s</span>
+                </div>
+              )}
               {/* Presence indicators */}
               {presences.length > 0 && (
                 <div style={{ display:'flex', gap:4 }}>

@@ -184,11 +184,18 @@ export default function Chat() {
   const idleCheckRef      = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollFallbackRef   = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastSeenTsRef     = useRef<string>(new Date().toISOString());
+  // Visible connection state for the UI dot — 'live' (green, WS connected),
+  // 'idle' (yellow, WS deliberately disconnected after 30s inactivity —
+  // this is normal/expected, not an error), 'blocked' (yellow, WS was
+  // refused/dropped and won't recover, e.g. connection cap hit — polling
+  // is the only sync path for the rest of this session)
+  const [connectionStatus, setConnectionStatus] = useState<'live' | 'idle' | 'blocked'>('live');
+  const wsBlockedRef = useRef(false);
 
   const markActivity = useCallback(() => { lastActivityRef.current = Date.now(); }, []);
 
   const connectWS = useCallback(() => {
-    if (wsConnectedRef.current || !authUser?.id) return;
+    if (wsConnectedRef.current || !authUser?.id || wsBlockedRef.current) return;
 
     const channel = supabase.channel(`sodmun_chat_${authUser.id}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async (payload) => {
@@ -248,14 +255,23 @@ export default function Chat() {
       .subscribe((status: string) => {
         if (status === 'SUBSCRIBED') {
           wsConnectedRef.current = true;
+          wsBlockedRef.current = false;
           idleChannelRef.current = channel;
           lastActivityRef.current = Date.now();
+          setConnectionStatus('live');
           // Re-sync everything on (re)connect — catches anything missed
           // during the gap, including the disconnected polling window
           if (activeRoomRef.current) fetchMessages(activeRoomRef.current);
           if (committeeRef.current) subscribeToLocks(committeeRef.current);
           if (profileRef.current) refreshSidebar(profileRef.current, isChairRef.current);
           lastSeenTsRef.current = new Date().toISOString();
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          // Refused or dropped and won't self-recover (e.g. 500-connection
+          // cap hit). Stop retrying the WebSocket for this session — the
+          // polling fallback below becomes the permanent sync path.
+          wsConnectedRef.current = false;
+          wsBlockedRef.current = true;
+          setConnectionStatus('blocked');
         }
       });
   }, [authUser?.id, markActivity]);
@@ -267,6 +283,7 @@ export default function Chat() {
       idleChannelRef.current = null;
     }
     wsConnectedRef.current = false;
+    setConnectionStatus('idle');
   }, []);
 
   // ── Idle watchdog: disconnect WS after 30s of no activity ─────────────────────
@@ -287,10 +304,14 @@ export default function Chat() {
     };
   }, [authUser?.id, connectWS, disconnectWS]);
 
-  // ── Lightweight polling fallback while WS is disconnected ─────────────────────
+  // ── Lightweight polling fallback while WS is disconnected (idle OR blocked) ───
   // Cheap query: only checks for messages newer than the last one we saw.
-  // The moment it finds something, it reconnects the WebSocket and lets
-  // the normal realtime + resync path take over again.
+  // - If idle (WS deliberately closed): finding something reconnects the WS
+  //   and lets the normal realtime + resync path take over again.
+  // - If blocked (WS refused and won't recover): we can't reconnect, so we
+  //   fetch and apply the new data directly via polling instead. This is
+  //   the same role the 2s poll plays in Resolutions.tsx as a permanent
+  //   fallback when the connection cap is hit.
   useEffect(() => {
     if (!authUser?.id) return;
 
@@ -302,13 +323,21 @@ export default function Chat() {
         .select('id, recipient_group, timestamp, sender_id')
         .gt('timestamp', lastSeenTsRef.current)
         .order('timestamp', { ascending: false })
-        .limit(1);
+        .limit(20);
 
       if (data && data.length > 0) {
-        // Something new arrived while we were idle — reconnect to catch up
-        connectWS();
+        lastSeenTsRef.current = data[0].timestamp;
+
+        if (wsBlockedRef.current) {
+          // Permanently blocked — apply directly instead of trying to reconnect
+          if (activeRoomRef.current) await fetchMessages(activeRoomRef.current);
+          if (committeeRef.current) await subscribeToLocks(committeeRef.current);
+        } else {
+          // Just idle — reconnecting the WS will trigger the normal resync
+          connectWS();
+        }
       }
-    }, 8000);
+    }, wsBlockedRef.current ? 4000 : 8000); // poll faster when it's the only sync path
 
     return () => { if (pollFallbackRef.current) clearInterval(pollFallbackRef.current); };
   }, [authUser?.id, connectWS]);
@@ -431,6 +460,27 @@ export default function Chat() {
           <p style={{ color:'var(--accent)', fontWeight:600, fontSize:'12px', marginTop:'4px' }}>{profile?.committee} Network</p>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+          {/* Connection status dot — green = live WebSocket, yellow = polling */}
+          <div
+            title={
+              connectionStatus === 'live'
+                ? 'Connected — live updates'
+                : connectionStatus === 'idle'
+                  ? 'Idle — checking for updates every 8s'
+                  : 'Live connection unavailable — syncing every 4s'
+            }
+            style={{ display:'flex', alignItems:'center', gap:6, background:'var(--bg-elevated)', border:'1px solid var(--border)', borderRadius:99, padding:'5px 11px' }}
+          >
+            <div style={{
+              width:7, height:7, borderRadius:'50%',
+              background: connectionStatus === 'live' ? '#22C55E' : '#EAB308',
+              boxShadow: connectionStatus === 'live' ? '0 0 0 3px rgba(34,197,94,0.15)' : '0 0 0 3px rgba(234,179,8,0.15)',
+              transition: 'background 0.3s, box-shadow 0.3s',
+            }} />
+            <span style={{ fontSize:11, fontWeight:600, color:'var(--text-muted)' }}>
+              {connectionStatus === 'live' ? 'Live' : connectionStatus === 'idle' ? 'Idle' : 'Polling'}
+            </span>
+          </div>
           {/* Sound toggle */}
           <button
             onClick={toggleSound}

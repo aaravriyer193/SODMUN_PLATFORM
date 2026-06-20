@@ -135,6 +135,14 @@ export async function reviewAmendment(amendment_id: number, amendment_status: 'a
   return call('resolution_action', { op: 'review_amendment', amendment_id, amendment_status });
 }
 
+// ── Lightweight message polling — used by Chat.tsx's idle/blocked fallback ───
+// Properly scoped per-role via the Edge Function (bypasses RLS gaps that
+// silently broke the old direct-table poll for delegates).
+export async function checkNewMessages(since: string) {
+  return call('check_new_messages', { since });
+  // returns { messages: { id, recipient_group, timestamp, sender_id }[] }
+}
+
 // ── Resolutions ────────────────────────────────────────────────────────────────
 export async function getResolutions(bloc_ids?: number[]) {
   return call('get_resolutions', bloc_ids ? { bloc_ids } : {});

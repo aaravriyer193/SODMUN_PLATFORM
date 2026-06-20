@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from './api';
 import { useAuth } from './AuthContext';
-import { chairGetSidebar, chairGetRoomMessages, bustSidebarCache, appendToRoomCache } from './committeeApi';
+import { chairGetSidebar, chairGetRoomMessages, bustSidebarCache, appendToRoomCache, checkNewMessages } from './committeeApi';
 
 const IconGlobe   = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>;
 const IconLock    = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>;
@@ -182,7 +182,7 @@ export default function Chat() {
   const wsConnectedRef    = useRef(false);
   const idleChannelRef    = useRef<any>(null);
   const idleCheckRef      = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pollFallbackRef   = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollFallbackRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSeenTsRef     = useRef<string>(new Date().toISOString());
   // Visible connection state for the UI dot — 'live' (green, WS connected),
   // 'idle' (yellow, WS deliberately disconnected after 30s inactivity —
@@ -214,7 +214,15 @@ export default function Chat() {
 
     const channel = supabase.channel(`sodmun_chat_${authUser.id}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async (payload) => {
-        markActivity();
+        // NOTE: markActivity() intentionally does NOT fire here unconditionally.
+        // With 25 committees all chatting, someone is always sending a message
+        // system-wide — if every insert reset the idle timer, the connection
+        // would never go idle for anyone, defeating the entire point of this
+        // mechanism (and explaining why it looked "stuck live" / dots firing
+        // "instantly" — the WS was never actually disconnecting). Activity is
+        // now only counted for messages the user can actually see arrive in
+        // their currently open room, or a relevant unread elsewhere — see
+        // the scoped markActivity() calls below instead.
         lastSeenTsRef.current = payload.new.timestamp || payload.new.created_at || lastSeenTsRef.current;
         const rg  = payload.new.recipient_group;
         const own = payload.new.sender_id === authUser.id;
@@ -222,6 +230,7 @@ export default function Chat() {
 
         if (chairNow) {
           if (rg === activeRoomRef.current) {
+            markActivity(); // user is watching this room live — genuine activity
             const { data: sender } = await supabase.from('users').select('*').eq('id', payload.new.sender_id).single();
             const msg = { ...payload.new, users: sender };
             setMessages(prev => [...prev, msg]);
@@ -244,9 +253,10 @@ export default function Chat() {
         const isGlobal = rg === p?.committee;
         const isDM     = rg?.startsWith('dm_') && rg?.includes(authUser.id);
         const isBloc   = rg?.startsWith('bloc_');
-        if (!isGlobal && !isDM && !isBloc) return;
+        if (!isGlobal && !isDM && !isBloc) return; // not relevant to this user at all
 
         if (rg === activeRoomRef.current) {
+          markActivity(); // user is watching this room live — genuine activity
           const { data: sender } = await supabase.from('users').select('*').eq('id', payload.new.sender_id).single();
           setMessages(prev => [...prev, { ...payload.new, users: sender }]);
           scrollToBottom();
@@ -260,7 +270,6 @@ export default function Chat() {
         }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'room_locks' }, (payload) => {
-        markActivity();
         if (payload.eventType === 'INSERT') {
           setLockedRooms(prev => new Set([...prev, payload.new.recipient_group]));
         } else if (payload.eventType === 'DELETE') {
@@ -336,32 +345,46 @@ export default function Chat() {
   //   fallback when the connection cap is hit.
   useEffect(() => {
     if (!authUser?.id) return;
+    let cancelled = false;
 
-    pollFallbackRef.current = setInterval(async () => {
-      if (wsConnectedRef.current) return; // WS is active, no need to poll
-
-      const { data } = await supabase
-        .from('messages')
-        .select('id, recipient_group, timestamp, sender_id')
-        .gt('timestamp', lastSeenTsRef.current)
-        .order('timestamp', { ascending: false })
-        .limit(20);
-
-      if (data && data.length > 0) {
-        lastSeenTsRef.current = data[0].timestamp;
-
-        if (wsBlockedRef.current) {
-          // Permanently blocked — apply directly instead of trying to reconnect
-          if (activeRoomRef.current) await fetchMessages(activeRoomRef.current);
-          if (committeeRef.current) await subscribeToLocks(committeeRef.current);
-        } else {
-          // Just idle — reconnecting the WS will trigger the normal resync
-          connectWS();
+    const poll = async () => {
+      if (cancelled) return;
+      if (!wsConnectedRef.current) {
+        try {
+          // Routed through the Edge Function (service role) — the previous
+          // direct supabase.from('messages') query was silently blocked by
+          // RLS for delegates (and chairs reading rooms they didn't send
+          // in), so the poll could never actually detect an incoming
+          // message and never triggered a reconnect. This is why "doesn't
+          // restart when you send or receive" was happening — receive
+          // detection was structurally broken, not just slow.
+          const result = await checkNewMessages(lastSeenTsRef.current);
+          const incoming = result.messages || [];
+          if (incoming.length > 0) {
+            lastSeenTsRef.current = incoming[0].timestamp;
+            if (wsBlockedRef.current) {
+              if (activeRoomRef.current) await fetchMessages(activeRoomRef.current);
+              if (committeeRef.current) await subscribeToLocks(committeeRef.current);
+            } else {
+              connectWS();
+            }
+          }
+        } catch (e) {
+          // Silent — background safety net, don't surface poll errors
         }
       }
-    }, wsBlockedRef.current ? 4000 : 8000); // poll faster when it's the only sync path
+      // Re-schedule using the CURRENT blocked state each time, instead of
+      // baking in whatever wsBlockedRef.current happened to be when the
+      // effect first mounted (which was always `false`, so it was always
+      // stuck at the slower 8s interval even after going permanently blocked)
+      if (!cancelled) {
+        const delay = wsBlockedRef.current ? 4000 : 8000;
+        pollFallbackRef.current = setTimeout(poll, delay);
+      }
+    };
 
-    return () => { if (pollFallbackRef.current) clearInterval(pollFallbackRef.current); };
+    pollFallbackRef.current = setTimeout(poll, 8000);
+    return () => { cancelled = true; if (pollFallbackRef.current) clearTimeout(pollFallbackRef.current); };
   }, [authUser?.id, connectWS]);
 
   const scrollToBottom = () => setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: 'smooth' }), 80);

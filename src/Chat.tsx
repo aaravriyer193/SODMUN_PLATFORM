@@ -87,11 +87,20 @@ export default function Chat() {
   const isChairRef     = useRef(false);
   const soundEnabledRef = useRef(true);
 
+  const hasInitializedRef = useRef(false);
+
   useEffect(() => { activeRoomRef.current = activeRoom; }, [activeRoom]);
   useEffect(() => { profileRef.current = profile; if (profile?.committee) committeeRef.current = profile.committee; }, [profile]);
   useEffect(() => { isChairRef.current = isChair; }, [isChair]);
   useEffect(() => { soundEnabledRef.current = soundEnabled; }, [soundEnabled]);
-  useEffect(() => { if (authUser) initializeChat(); }, [authUser]);
+  // Keyed on authUser?.id (a stable string) instead of the whole authUser
+  // object. Supabase silently rotates the auth token periodically, which
+  // can produce a new `authUser` object reference with the SAME id — if
+  // this effect depended on the object itself, that refresh would re-fire
+  // initializeChat() and reset activeRoom back to Global Committee, which
+  // is exactly what was happening (it looked tied to "new message arrives"
+  // because polling and token refresh just happened to coincide in time).
+  useEffect(() => { if (authUser?.id) initializeChat(); }, [authUser?.id]);
 
   // ── Toggle sound ──────────────────────────────────────────────────────────
   const toggleSound = () => {
@@ -108,8 +117,18 @@ export default function Chat() {
     profileRef.current = userData;
     const chair = userData.role !== 'Delegate';
     setIsChair(chair);
-    setActiveRoom(userData.committee);
-    setActiveRoomName('Global Committee');
+
+    // Only set the active room on genuine first load. If this effect
+    // re-fires later (e.g. after an auth token refresh), the user's
+    // current room selection — including which DM or bloc they're
+    // viewing — must be left untouched instead of being forced back
+    // to Global Committee.
+    if (!hasInitializedRef.current) {
+      hasInitializedRef.current = true;
+      setActiveRoom(userData.committee);
+      setActiveRoomName('Global Committee');
+    }
+
     await Promise.all([refreshSidebar(userData, chair), subscribeToLocks(userData.committee)]);
   };
 

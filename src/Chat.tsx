@@ -82,9 +82,14 @@ export default function Chat() {
   const activeRoomRef = useRef(activeRoom);
   const knownDMRooms  = useRef<Set<string>>(new Set());
   const profileRef    = useRef<any>(null);
+  const committeeRef   = useRef<string>('');
+  const isChairRef     = useRef(false);
+  const soundEnabledRef = useRef(true);
 
   useEffect(() => { activeRoomRef.current = activeRoom; }, [activeRoom]);
-  useEffect(() => { profileRef.current = profile; }, [profile]);
+  useEffect(() => { profileRef.current = profile; if (profile?.committee) committeeRef.current = profile.committee; }, [profile]);
+  useEffect(() => { isChairRef.current = isChair; }, [isChair]);
+  useEffect(() => { soundEnabledRef.current = soundEnabled; }, [soundEnabled]);
   useEffect(() => { if (authUser) initializeChat(); }, [authUser]);
 
   // ── Toggle sound ──────────────────────────────────────────────────────────
@@ -107,21 +112,10 @@ export default function Chat() {
     await Promise.all([refreshSidebar(userData, chair), subscribeToLocks(userData.committee)]);
   };
 
-  // ── Room locks realtime ───────────────────────────────────────────────────
+  // ── Room locks: initial load only — realtime merged into main channel ────────
   const subscribeToLocks = async (committee: string) => {
-    // Load existing locks
     const { data: locks } = await supabase.from('room_locks').select('recipient_group').eq('committee', committee);
     if (locks) setLockedRooms(new Set(locks.map((l: any) => l.recipient_group)));
-
-    supabase.channel('room_locks_' + committee)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_locks' }, (payload) => {
-        if (payload.eventType === 'INSERT') {
-          setLockedRooms(prev => new Set([...prev, payload.new.recipient_group]));
-        } else if (payload.eventType === 'DELETE') {
-          setLockedRooms(prev => { const s = new Set(prev); s.delete(payload.old.recipient_group); return s; });
-        }
-      })
-      .subscribe();
   };
 
   // ── Sidebar ───────────────────────────────────────────────────────────────
@@ -170,14 +164,41 @@ export default function Chat() {
     } catch (e) { console.error(e); }
   };
 
-  // ── Realtime messages ─────────────────────────────────────────────────────
-  useEffect(() => {
-    const channel = supabase.channel('chat_v3')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async (payload) => {
-        const rg  = payload.new.recipient_group;
-        const own = payload.new.sender_id === authUser?.id;
+  // ── Single merged realtime channel: messages + room locks ───────────────────
+  // One WebSocket connection per user. Subscribes ONCE on mount (deps = [authUser?.id])
+  // and never tears down due to isChair/soundEnabled changes — those are read from
+  // refs inside the handler instead, so reconnects never silently drop events.
+  //
+  // ── Connection lifecycle management ──────────────────────────────────────────
+  // The WebSocket auto-disconnects after 30s of no chat activity (no new
+  // message in any room, no message sent) to free the connection slot for
+  // other users. While disconnected, a lightweight poll checks every 8s for
+  // anything new via a normal table query. The instant something arrives —
+  // or the user sends a message — the WebSocket reconnects and resumes
+  // instant push. This keeps actual concurrent connections proportional to
+  // how many people are mid-conversation right now, not how many tabs are
+  // simply open.
+  const lastActivityRef   = useRef(Date.now());
+  const wsConnectedRef    = useRef(false);
+  const idleChannelRef    = useRef<any>(null);
+  const idleCheckRef      = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollFallbackRef   = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastSeenTsRef     = useRef<string>(new Date().toISOString());
 
-        if (isChair) {
+  const markActivity = useCallback(() => { lastActivityRef.current = Date.now(); }, []);
+
+  const connectWS = useCallback(() => {
+    if (wsConnectedRef.current || !authUser?.id) return;
+
+    const channel = supabase.channel(`sodmun_chat_${authUser.id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async (payload) => {
+        markActivity();
+        lastSeenTsRef.current = payload.new.timestamp || payload.new.created_at || lastSeenTsRef.current;
+        const rg  = payload.new.recipient_group;
+        const own = payload.new.sender_id === authUser.id;
+        const chairNow = isChairRef.current;
+
+        if (chairNow) {
           if (rg === activeRoomRef.current) {
             const { data: sender } = await supabase.from('users').select('*').eq('id', payload.new.sender_id).single();
             const msg = { ...payload.new, users: sender };
@@ -186,7 +207,7 @@ export default function Chat() {
             scrollToBottom();
           } else if (!own) {
             setUnreadCounts(prev => { const m = new Map(prev); m.set(rg, (m.get(rg) || 0) + 1); return m; });
-            if (soundEnabled) playNotifSound(rg.startsWith('dm_'));
+            if (soundEnabledRef.current) playNotifSound(rg.startsWith('dm_'));
           }
           if (rg?.startsWith('dm_') && !knownDMRooms.current.has(rg)) {
             knownDMRooms.current.add(rg);
@@ -199,7 +220,7 @@ export default function Chat() {
         // Delegate path
         const p = profileRef.current;
         const isGlobal = rg === p?.committee;
-        const isDM     = rg?.startsWith('dm_') && rg?.includes(authUser?.id);
+        const isDM     = rg?.startsWith('dm_') && rg?.includes(authUser.id);
         const isBloc   = rg?.startsWith('bloc_');
         if (!isGlobal && !isDM && !isBloc) return;
 
@@ -209,16 +230,88 @@ export default function Chat() {
           scrollToBottom();
         } else if (!own) {
           setUnreadCounts(prev => { const m = new Map(prev); m.set(rg, (m.get(rg) || 0) + 1); return m; });
-          if (soundEnabled) playNotifSound(isDM);
+          if (soundEnabledRef.current) playNotifSound(isDM);
         }
         if (rg?.startsWith('dm_') && !knownDMRooms.current.has(rg)) {
           knownDMRooms.current.add(rg);
           refreshSidebar();
         }
       })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [isChair, soundEnabled]);
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_locks' }, (payload) => {
+        markActivity();
+        if (payload.eventType === 'INSERT') {
+          setLockedRooms(prev => new Set([...prev, payload.new.recipient_group]));
+        } else if (payload.eventType === 'DELETE') {
+          setLockedRooms(prev => { const s = new Set(prev); s.delete(payload.old.recipient_group); return s; });
+        }
+      })
+      .subscribe((status: string) => {
+        if (status === 'SUBSCRIBED') {
+          wsConnectedRef.current = true;
+          idleChannelRef.current = channel;
+          lastActivityRef.current = Date.now();
+          // Re-sync everything on (re)connect — catches anything missed
+          // during the gap, including the disconnected polling window
+          if (activeRoomRef.current) fetchMessages(activeRoomRef.current);
+          if (committeeRef.current) subscribeToLocks(committeeRef.current);
+          if (profileRef.current) refreshSidebar(profileRef.current, isChairRef.current);
+          lastSeenTsRef.current = new Date().toISOString();
+        }
+      });
+  }, [authUser?.id, markActivity]);
+
+  const disconnectWS = useCallback(() => {
+    if (!wsConnectedRef.current) return;
+    if (idleChannelRef.current) {
+      supabase.removeChannel(idleChannelRef.current);
+      idleChannelRef.current = null;
+    }
+    wsConnectedRef.current = false;
+  }, []);
+
+  // ── Idle watchdog: disconnect WS after 30s of no activity ─────────────────────
+  useEffect(() => {
+    if (!authUser?.id) return;
+    connectWS();
+
+    idleCheckRef.current = setInterval(() => {
+      const idleFor = Date.now() - lastActivityRef.current;
+      if (wsConnectedRef.current && idleFor > 30000) {
+        disconnectWS();
+      }
+    }, 5000);
+
+    return () => {
+      if (idleCheckRef.current) clearInterval(idleCheckRef.current);
+      disconnectWS();
+    };
+  }, [authUser?.id, connectWS, disconnectWS]);
+
+  // ── Lightweight polling fallback while WS is disconnected ─────────────────────
+  // Cheap query: only checks for messages newer than the last one we saw.
+  // The moment it finds something, it reconnects the WebSocket and lets
+  // the normal realtime + resync path take over again.
+  useEffect(() => {
+    if (!authUser?.id) return;
+
+    pollFallbackRef.current = setInterval(async () => {
+      if (wsConnectedRef.current) return; // WS is active, no need to poll
+
+      const { data } = await supabase
+        .from('messages')
+        .select('id, recipient_group, timestamp, sender_id')
+        .gt('timestamp', lastSeenTsRef.current)
+        .order('timestamp', { ascending: false })
+        .limit(1);
+
+      if (data && data.length > 0) {
+        // Something new arrived while we were idle — reconnect to catch up
+        connectWS();
+      }
+    }, 8000);
+
+    return () => { if (pollFallbackRef.current) clearInterval(pollFallbackRef.current); };
+  }, [authUser?.id, connectWS]);
 
   const scrollToBottom = () => setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: 'smooth' }), 80);
 
@@ -228,6 +321,10 @@ export default function Chat() {
     if (!input.trim() || !activeRoom || isObserving || isRoomLocked) return;
     const content = input;
     setInput('');
+    markActivity();
+    // If the WS had idled out, sending a message means the user is back —
+    // reconnect immediately rather than waiting for the next poll cycle
+    if (!wsConnectedRef.current) connectWS();
     await supabase.from('messages').insert([{ sender_id: authUser?.id, content, recipient_group: activeRoom }]);
   };
 
@@ -252,6 +349,8 @@ export default function Chat() {
   const switchRoom = (id: string, name: string) => {
     setActiveRoom(id); setActiveRoomName(name); setMessages([]);
     setUnreadCounts(prev => { const m = new Map(prev); m.delete(id); return m; });
+    markActivity();
+    if (!wsConnectedRef.current) connectWS();
   };
 
   const isObserving  = isChair && activeRoom.startsWith('dm_') && !activeRoom.includes(authUser?.id ?? '');

@@ -221,6 +221,7 @@ export default function Resolutions() {
   const titleTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
   const versionAutoRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastKnownBlocks = useRef<Map<string, any>>(new Map());
+  const pendingSaveIds  = useRef<Set<string>>(new Set());
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const isChair = profile?.role !== 'Delegate' && profile?.role !== null;
@@ -367,16 +368,35 @@ export default function Resolutions() {
     }, 80); // ~12 updates/sec max — smooth but not flooding the channel
   };
 
-  // Re-announce presence whenever the open resolution changes
+  // Re-announce presence whenever the open resolution changes — with retry,
+  // since presenceChannelRef.current may still be null if the main channel's
+  // subscribe() callback hasn't fired yet (common on first load). Without the
+  // retry, this effect silently no-ops and the user never appears present.
   useEffect(() => {
-    if (!activeRes?.id || !presenceChannelRef.current || !authUser?.id) return;
-    presenceChannelRef.current.track({
-      userId: authUser.id,
-      delegation: profile?.delegation || profile?.role,
-      blockId: null,
-      resId: activeRes.id,
-    });
-  }, [activeRes?.id]);
+    if (!activeRes?.id || !authUser?.id) return;
+
+    let cancelled = false;
+    let attempts = 0;
+
+    const announce = () => {
+      if (cancelled) return;
+      if (presenceChannelRef.current) {
+        presenceChannelRef.current.track({
+          userId: authUser.id,
+          delegation: profile?.delegation || profile?.role,
+          blockId: null,
+          resId: activeRes.id,
+        });
+      } else if (attempts < 20) {
+        // Channel not ready yet — retry for up to ~4 seconds
+        attempts++;
+        setTimeout(announce, 200);
+      }
+    };
+    announce();
+
+    return () => { cancelled = true; };
+  }, [activeRes?.id, authUser?.id, profile]);
 
   // ── Fetch core data ───────────────────────────────────────────────────────────
   const restoreLastResolution = (resList: any[]) => {
@@ -452,14 +472,18 @@ export default function Resolutions() {
         const remoteIds = new Set(sorted.map(r => r.id));
 
         setBlocks(prev => {
-          // Don't clobber a block the user is actively typing in right now
+          // Don't clobber whatever block currently has focus (mid-keystroke)
           const focusedId = (document.activeElement as HTMLElement)?.closest?.('[data-block-id]')
             ?.getAttribute('data-block-id');
 
           let changed = false;
           const merged = sorted.map(r => {
-            if (r.id === focusedId) {
-              // Keep local version for whatever block has focus
+            // Skip any block with an unconfirmed local save in flight — this
+            // is the actual fix for the "edit disappears then reappears"
+            // flicker. The focused-block check alone wasn't enough because
+            // the debounced save (400ms) can still be pending on a block
+            // you've already moved away from when the poll fires.
+            if (r.id === focusedId || pendingSaveIds.current.has(r.id)) {
               const local = prev.find(b => b.id === r.id);
               if (local) return local;
             }
@@ -473,8 +497,11 @@ export default function Resolutions() {
           });
 
           // Catch local blocks that no longer exist remotely (rare, but covers
-          // a delete that came through polling instead of realtime)
-          const finalBlocks = merged.filter(b => remoteIds.has(b.id) || b.id === focusedId);
+          // a delete that came through polling instead of realtime) — but
+          // never drop a block that still has a pending save or has focus
+          const finalBlocks = merged.filter(b =>
+            remoteIds.has(b.id) || b.id === focusedId || pendingSaveIds.current.has(b.id)
+          );
           if (finalBlocks.length !== prev.length) changed = true;
 
           if (!changed) return prev; // no-op, avoids needless re-render
@@ -482,9 +509,14 @@ export default function Resolutions() {
         });
 
         // Keep the diff baseline in sync so commitBlocks doesn't re-push
-        // things that just arrived via polling
-        const map = new Map<string, any>();
-        sorted.forEach(r => map.set(r.id, { html: r.html, type: r.type, indent: r.indent, position: r.position }));
+        // things that just arrived via polling — but don't stomp the
+        // baseline for blocks that still have a save in flight
+        const map = new Map<string, any>(lastKnownBlocks.current);
+        sorted.forEach(r => {
+          if (!pendingSaveIds.current.has(r.id)) {
+            map.set(r.id, { html: r.html, type: r.type, indent: r.indent, position: r.position });
+          }
+        });
         lastKnownBlocks.current = map;
       } catch (e) {
         // Silent — this is a background safety net, don't surface errors for it
@@ -589,6 +621,11 @@ export default function Resolutions() {
       updated.forEach((b, idx) => newMap.set(b.id, { html: b.html, type: b.type, indent: b.indent, position: idx }));
       lastKnownBlocks.current = newMap;
 
+      // Save confirmed — these blocks are no longer "pending", safe for the
+      // poll to overwrite them again if a newer remote version shows up
+      changed.forEach(b => pendingSaveIds.current.delete(b.id));
+      deletedIds.forEach(id => pendingSaveIds.current.delete(id));
+
       lastSaveTime.current = Date.now();
       setSyncStatus('saved');
     } catch (e) {
@@ -600,6 +637,20 @@ export default function Resolutions() {
   const commitBlocks = (updated: any[]) => {
     setBlocks(updated);
     setSyncStatus('saving');
+
+    // Mark every block that differs from the last confirmed save as "pending"
+    // — the poll fallback will skip these until syncBlocksToDb confirms them.
+    // This is what fixes the "edit disappears then comes back" flicker: the
+    // poll was previously only protecting the focused block, so an edit you'd
+    // already moved away from (but hadn't finished saving) could get clobbered
+    // by a stale poll result, then "reappear" once the debounced save landed.
+    updated.forEach((b, idx) => {
+      const prev = lastKnownBlocks.current.get(b.id);
+      if (!prev || prev.html !== b.html || prev.type !== b.type || prev.indent !== b.indent || prev.position !== idx) {
+        pendingSaveIds.current.add(b.id);
+      }
+    });
+
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     const since = Date.now() - lastSaveTime.current;
     if (since > 1500) syncBlocksToDb(updated);

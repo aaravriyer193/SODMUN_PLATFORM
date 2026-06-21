@@ -163,16 +163,38 @@ function PollCard({ poll, authUserId, isAdmin, onChanged }: { poll: any; authUse
 
   useEffect(() => { loadVotes(); }, [loadVotes]);
 
-  // Live updates via realtime — polls benefit from instant feedback since
-  // results changing live is the whole point of watching a poll
+  // Polling instead of realtime — same reasoning as the rest of the app:
+  // WebSockets were deliberately removed everywhere else specifically to
+  // avoid one connection per user at scale, and a per-poll channel here
+  // would have reintroduced exactly that (700 users viewing one active
+  // poll = 700 WebSocket connections). 3s polling is fast enough that
+  // vote count changes still feel live, with zero standing connections
+  // and zero Edge Function invocations (direct PostgREST read).
+  //
+  // Also paused entirely when the browser tab is backgrounded — there's
+  // no point polling for a poll nobody is currently looking at. Resumes
+  // (with an immediate refresh) the moment the tab becomes visible again.
   useEffect(() => {
-    const channel = supabase.channel(`poll_${poll.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'poll_votes', filter: `poll_id=eq.${poll.id}` }, () => {
-        loadVotes();
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [poll.id, loadVotes]);
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    const start = () => {
+      if (interval) return;
+      interval = setInterval(loadVotes, 3000);
+    };
+    const stop = () => {
+      if (interval) { clearInterval(interval); interval = null; }
+    };
+
+    if (document.visibilityState === 'visible') start();
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') { loadVotes(); start(); }
+      else stop();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => { stop(); document.removeEventListener('visibilitychange', onVisibility); };
+  }, [loadVotes]);
 
   const myVotes = votes.filter(v => v.user_id === authUserId).map(v => v.option_id);
   const totalVoters = new Set(votes.map(v => v.user_id)).size;
@@ -547,15 +569,33 @@ export default function Announcements() {
     return unsubscribe;
   }, [authUser?.id]);
 
-  // ── Realtime for new/closed polls — separate from the vote-level realtime
-  // inside PollCard, this just catches polls being created/closed/deleted
-  // so the list itself stays current ──────────────────────────────────────
+  // ── Poll list refresh — interval, not realtime ───────────────────────────
+  // Catches new/closed/deleted polls. No WebSocket — same reasoning as
+  // everywhere else in the app. New polls being created is a rare,
+  // low-frequency event (an admin action), so a slower 8s interval is
+  // plenty here; it doesn't need the 3s cadence vote counts get. Also
+  // paused while the tab is backgrounded, same as the vote polling above.
   useEffect(() => {
     if (!authUser?.id) return;
-    const channel = supabase.channel('polls_list')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'polls' }, () => loadPolls())
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    const start = () => {
+      if (interval) return;
+      interval = setInterval(loadPolls, 8000);
+    };
+    const stop = () => {
+      if (interval) { clearInterval(interval); interval = null; }
+    };
+
+    if (document.visibilityState === 'visible') start();
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') { loadPolls(); start(); }
+      else stop();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => { stop(); document.removeEventListener('visibilitychange', onVisibility); };
   }, [authUser?.id]);
 
   const handlePost = async () => {

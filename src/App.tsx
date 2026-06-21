@@ -7,6 +7,7 @@ import Login from './Login';
 import Dashboard from './Dashboard';
 import Chat from './Chat';
 import Resolutions from './Resolutions';
+import Announcements from './Announcements';
 import SoddyBot from './SoddyBot';
 import Schedule from './Schedule';
 import SpeakersTimer from './SpeakersTimer';
@@ -32,6 +33,7 @@ interface Notification {
 
 // ─── ICONS ────────────────────────────────────────────────────────────────────
 const IconDash    = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>;
+const IconMega    = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>;
 const IconChat    = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>;
 const IconDocs    = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>;
 const IconBot     = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8.01" y2="16"/><line x1="16" y1="16" x2="16.01" y2="16"/></svg>;
@@ -683,6 +685,7 @@ const AppShell = () => {
           {/* Main nav */}
           <nav style={{ display:'flex', flexDirection:'column', gap:0 }}>
             <NavItem to="/"            icon={<IconDash />} label="Dashboard"      collapsed={collapsed} />
+            <NavItem to="/announcements" icon={<IconMega />} label="Announcements"  collapsed={collapsed} />
             <NavItem to="/chat"        icon={<IconChat />} label="Communications" collapsed={collapsed} badge={unreadCount} />
             <NavItem to="/resolutions" icon={<IconDocs />} label="Resolutions"    collapsed={collapsed} />
             <NavItem to="/soddy"       icon={<IconBot  />} label="Soddy AI"       collapsed={collapsed} />
@@ -818,6 +821,7 @@ const AppShell = () => {
             <p style={{ fontSize:'9.5px', fontWeight:700, textTransform:'uppercase', letterSpacing:'2.2px', color:'var(--text-muted)', paddingLeft:12, marginBottom:6 }}>Platform</p>
             <nav style={{ display:'flex', flexDirection:'column', gap:0 }}>
               <NavItem to="/"            icon={<IconDash />} label="Dashboard"      collapsed={false} />
+              <NavItem to="/announcements" icon={<IconMega />} label="Announcements"  collapsed={false} />
               <NavItem to="/chat"        icon={<IconChat />} label="Communications" collapsed={false} badge={unreadCount} />
               <NavItem to="/resolutions" icon={<IconDocs />} label="Resolutions"    collapsed={false} />
               <NavItem to="/soddy"       icon={<IconBot  />} label="Soddy AI"       collapsed={false} />
@@ -862,6 +866,7 @@ const AppShell = () => {
           <Route path="/resolutions"  element={<ProtectedRoute><Resolutions /></ProtectedRoute>} />
           <Route path="/soddy"        element={<ProtectedRoute><SoddyBot /></ProtectedRoute>} />
           <Route path="/schedule"     element={<ProtectedRoute><Schedule /></ProtectedRoute>} />
+          <Route path="/announcements" element={<ProtectedRoute><Announcements /></ProtectedRoute>} />
           <Route path="/timer"        element={<ProtectedRoute><ChairRoute role={role} roleLoading={roleLoading}><SpeakersTimer /></ChairRoute></ProtectedRoute>} />
           <Route path="/committee"    element={<ProtectedRoute><ChairRoute role={role} roleLoading={roleLoading}><CommitteeManager /></ChairRoute></ProtectedRoute>} />
         </Routes>

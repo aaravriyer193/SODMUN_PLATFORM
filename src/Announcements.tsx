@@ -444,13 +444,24 @@ const RichComposer = React.forwardRef<{ insertImage: (url: string) => void }, {
   );
 });
 
+// Same UTC-parsing fix as Chat.tsx — PostgREST can serialize timestamptz
+// values without a trailing 'Z', which JS then misparses as local time
+// instead of UTC, producing exactly "shows UTC even though every device
+// is in Dubai" symptoms. toUTC() forces correct parsing; timeZone:
+// 'Asia/Dubai' forces correct display regardless of device clock settings.
+function toUTC(ts: string | Date): Date {
+  if (ts instanceof Date) return ts;
+  const hasTz = /Z$|[+-]\d{2}:\d{2}$/.test(ts);
+  return new Date(hasTz ? ts : ts + 'Z');
+}
+
 function formatTime(ts: string) {
-  const d = new Date(ts);
+  const d = toUTC(ts);
   const now = new Date();
-  const sameDay = d.toDateString() === now.toDateString();
-  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const sameDay = d.toLocaleDateString('en-US', { timeZone: 'Asia/Dubai' }) === now.toLocaleDateString('en-US', { timeZone: 'Asia/Dubai' });
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Dubai' });
   if (sameDay) return time;
-  return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} · ${time}`;
+  return `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'Asia/Dubai' })} · ${time}`;
 }
 
 function hasContent(html: string) {

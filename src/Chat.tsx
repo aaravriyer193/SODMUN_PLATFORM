@@ -39,22 +39,38 @@ function playNotifSound(isDM: boolean) {
 }
 
 // ── Time formatting ────────────────────────────────────────────────────────
+// IMPORTANT: Postgres timestamptz columns are stored as UTC, but PostgREST
+// can serialize them WITHOUT a trailing 'Z' (e.g. "2026-06-21T14:30:00.000"
+// instead of "...000Z"). Per the ISO 8601 spec, a string with no 'Z' or
+// offset is parsed as LOCAL time by JS — so a genuinely-UTC value with no
+// 'Z' gets displayed as-is with no timezone conversion at all, which is
+// indistinguishable from "showing raw UTC" even when every viewer's device
+// is correctly set to Dubai time. toUTC() below forces correct parsing
+// regardless of whether the source string happens to include 'Z' or not.
+function toUTC(ts: string | Date): Date {
+  if (ts instanceof Date) return ts;
+  // If it already has a timezone marker (Z or +HH:MM/-HH:MM), trust it.
+  // Otherwise, treat it as UTC by appending 'Z' before parsing.
+  const hasTz = /Z$|[+-]\d{2}:\d{2}$/.test(ts);
+  return new Date(hasTz ? ts : ts + 'Z');
+}
+
 function formatTime(ts: string | Date) {
-  const d = new Date(ts);
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const d = toUTC(ts);
+  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Dubai' });
 }
 
 function formatDateSeparator(ts: string | Date) {
-  const d = new Date(ts);
+  const d = toUTC(ts);
   const now = new Date();
   const diff = Math.floor((now.getTime() - d.getTime()) / 86400000);
   if (diff === 0) return 'Today';
   if (diff === 1) return 'Yesterday';
-  return d.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
+  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', timeZone: 'Asia/Dubai' });
 }
 
 function isSameDay(a: string | Date, b: string | Date) {
-  const da = new Date(a), db = new Date(b);
+  const da = toUTC(a), db = toUTC(b);
   return da.getFullYear() === db.getFullYear() && da.getMonth() === db.getMonth() && da.getDate() === db.getDate();
 }
 

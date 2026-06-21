@@ -1,3 +1,29 @@
+// Announcements.tsx — platform-wide announcements
+//
+// Stored in the existing `messages` table with a special
+// recipient_group = '__announcements__'. This deliberately reuses
+// all the polling/RLS/backoff infrastructure already built for chat —
+// no new tables, no new poll loop, no new Edge Function action.
+//
+// Read: any authenticated user, any committee (see RLS policy
+// "Everyone can read announcements").
+// Write: only users with role = 'Admin' (see RLS policy
+// "Only admins can post announcements"). This is a NEW role value,
+// additive only — it does NOT affect the existing isChair binary
+// (role !== 'Delegate') used everywhere else in the app. An Admin
+// is not automatically a chair anywhere.
+
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { supabase } from './api';
+import { useAuth } from './AuthContext';
+import { subscribeToMessagePoll, triggerImmediatePoll } from './committeeApi';
+
+const ANNOUNCEMENTS_ROOM = '__announcements__';
+
+const IconMegaphone = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>;
+const IconSend      = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>;
+const IconTrash     = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>;
+
 // ── Rich text composer ─────────────────────────────────────────────────────────
 // contentEditable + document.execCommand — same lightweight approach used by
 // the resolution editor (EditableBlock in Resolutions.tsx), kept consistent
@@ -5,7 +31,7 @@
 // `content` (rendered with dangerouslySetInnerHTML on read), same column,
 // same table — no schema change needed.
 
-const IconBold      = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 4h8a4 4 0 0 1 0 8H6z"/><path d="M6 12h9a4 4 0 0 1 0 8H6z"/></svg>;
+const IconBold       = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 4h8a4 4 0 0 1 0 8H6z"/><path d="M6 12h9a4 4 0 0 1 0 8H6z"/></svg>;
 const IconItalic     = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="4" x2="10" y2="4"/><line x1="14" y1="20" x2="5" y2="20"/><line x1="15" y1="4" x2="9" y2="20"/></svg>;
 const IconUnderline  = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 3v7a6 6 0 0 0 12 0V3"/><line x1="4" y1="21" x2="20" y2="21"/></svg>;
 const IconStrike     = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="12" x2="20" y2="12"/><path d="M16 6.5a4 4 0 0 0-3.5-2c-2.5 0-4 1.3-4 3 0 1.5 1 2.3 2.5 2.7M8 17.5a4 4 0 0 0 3.5 2c2.5 0 4-1.3 4-3 0-1-.5-1.8-1.5-2.3"/></svg>;
@@ -162,7 +188,7 @@ function RichComposer({ value, onChange, onSubmit, placeholder }: {
   );
 }
 
-
+function formatTime(ts: string) {
   const d = new Date(ts);
   const now = new Date();
   const sameDay = d.toDateString() === now.toDateString();
@@ -222,13 +248,13 @@ function sanitizeHtml(html: string): string {
 
 export default function Announcements() {
   const { user: authUser } = useAuth();
-  const [profile, setProfile]           = useState<any>(null);
-  const [isAdmin, setIsAdmin]           = useState(false);
+  const [profile, setProfile]             = useState<any>(null);
+  const [isAdmin, setIsAdmin]             = useState(false);
   const [announcements, setAnnouncements] = useState<any[]>([]);
-  const [loading, setLoading]           = useState(true);
-  const [draft, setDraft]               = useState('');
-  const [sending, setSending]           = useState(false);
-  const [deletingId, setDeletingId]     = useState<string | null>(null);
+  const [loading, setLoading]             = useState(true);
+  const [draft, setDraft]                 = useState('');
+  const [sending, setSending]             = useState(false);
+  const [deletingId, setDeletingId]       = useState<string | null>(null);
 
   const lastSeenTsRef = useRef<string>(new Date(0).toISOString());
 

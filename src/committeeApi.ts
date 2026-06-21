@@ -439,3 +439,89 @@ export function triggerImmediatePoll() {
   // If not leader, the leader tab is already polling on its own cadence —
   // nothing for this tab to do, it'll get results via BroadcastChannel
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// POLLS — direct PostgREST, same low-cost pattern as everything else.
+// Read access is open to everyone (RLS), writes are admin-only (RLS) or
+// self-only for votes. No Edge Function needed — RLS does all the work.
+// ════════════════════════════════════════════════════════════════════════════
+
+export interface PollOption { id: string; label: string; }
+
+export async function createPoll(question: string, options: PollOption[], multiSelect = false, closesAt?: string) {
+  const { data, error } = await supabase
+    .from('polls')
+    .insert([{ question, options, multi_select: multiSelect, closes_at: closesAt || null }])
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function closePoll(pollId: number) {
+  const { error } = await supabase.from('polls').update({ closed: true }).eq('id', pollId);
+  if (error) throw error;
+}
+
+export async function deletePoll(pollId: number) {
+  const { error } = await supabase.from('polls').delete().eq('id', pollId);
+  if (error) throw error;
+}
+
+export async function getPolls() {
+  const { data, error } = await supabase
+    .from('polls')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function getPollVotes(pollId: number) {
+  const { data, error } = await supabase
+    .from('poll_votes')
+    .select('*')
+    .eq('poll_id', pollId);
+  if (error) throw error;
+  return data || [];
+}
+
+export async function castVote(pollId: number, userId: string, optionId: string, multiSelect: boolean) {
+  if (!multiSelect) {
+    // Single-select: remove any existing vote(s) from this user on this poll first
+    await supabase.from('poll_votes').delete().eq('poll_id', pollId).eq('user_id', userId);
+  }
+  const { error } = await supabase.from('poll_votes').insert([{ poll_id: pollId, user_id: userId, option_id: optionId }]);
+  if (error) throw error;
+}
+
+export async function removeVote(pollId: number, userId: string, optionId: string) {
+  const { error } = await supabase.from('poll_votes').delete()
+    .eq('poll_id', pollId).eq('user_id', userId).eq('option_id', optionId);
+  if (error) throw error;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// PHOTO ATTACHMENTS — Supabase Storage, admin-upload-only via RLS on the bucket.
+// ════════════════════════════════════════════════════════════════════════════
+
+export async function uploadAnnouncementPhoto(file: File): Promise<string> {
+  const ext = file.name.split('.').pop() || 'jpg';
+  const path = `${crypto.randomUUID()}.${ext}`;
+  const { error } = await supabase.storage.from('announcement-photos').upload(path, file, {
+    cacheControl: '3600',
+    upsert: false,
+  });
+  if (error) throw error;
+  const { data: urlData } = supabase.storage.from('announcement-photos').getPublicUrl(path);
+  return urlData.publicUrl;
+}
+
+export async function deleteAnnouncementPhoto(url: string) {
+  // Extract the storage path from a public URL
+  const marker = '/announcement-photos/';
+  const idx = url.indexOf(marker);
+  if (idx === -1) return;
+  const path = url.slice(idx + marker.length);
+  await supabase.storage.from('announcement-photos').remove([path]);
+}

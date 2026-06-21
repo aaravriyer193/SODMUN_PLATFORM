@@ -337,7 +337,7 @@ export default function Announcements() {
   }
 
   return (
-    <div style={{ height:'100vh', display:'flex', flexDirection:'column', padding:'32px 32px 24px', gap:'20px', boxSizing:'border-box', maxWidth:780, margin:'0 auto', width:'100%' }}>
+    <div style={{ height:'100vh', display:'flex', flexDirection:'column', padding:'32px 40px 24px', gap:'20px', boxSizing:'border-box', maxWidth:1080, margin:'0 auto', width:'100%' }}>
       <div>
         <h1 className="delegation-brand" style={{ display:'flex', alignItems:'center', gap:10 }}>
           <IconMegaphone /> Announcements

@@ -1,14 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from './api';
 import { useAuth } from './AuthContext';
-import { chairGetSidebar, chairGetRoomMessages, bustSidebarCache, appendToRoomCache, subscribeToMessagePoll, triggerImmediatePoll } from './committeeApi';
+import { subscribeToMessagePoll, triggerImmediatePoll } from './committeeApi';
 
 const IconGlobe   = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>;
 const IconLock    = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>;
 const IconMessage = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>;
 const IconSend    = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>;
 const IconPlus    = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
-const IconEye     = () => <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>;
 const IconBell    = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>;
 const IconBellOff = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13.73 21a2 2 0 0 1-3.46 0"/><path d="M18.63 13A17.89 17.89 0 0 1 18 8"/><path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14"/><path d="M18 8a6 6 0 0 0-9.33-5"/><line x1="1" y1="1" x2="23" y2="23"/></svg>;
 
@@ -39,18 +38,8 @@ function playNotifSound(isDM: boolean) {
 }
 
 // ── Time formatting ────────────────────────────────────────────────────────
-// IMPORTANT: Postgres timestamptz columns are stored as UTC, but PostgREST
-// can serialize them WITHOUT a trailing 'Z' (e.g. "2026-06-21T14:30:00.000"
-// instead of "...000Z"). Per the ISO 8601 spec, a string with no 'Z' or
-// offset is parsed as LOCAL time by JS — so a genuinely-UTC value with no
-// 'Z' gets displayed as-is with no timezone conversion at all, which is
-// indistinguishable from "showing raw UTC" even when every viewer's device
-// is correctly set to Dubai time. toUTC() below forces correct parsing
-// regardless of whether the source string happens to include 'Z' or not.
 function toUTC(ts: string | Date): Date {
   if (ts instanceof Date) return ts;
-  // If it already has a timezone marker (Z or +HH:MM/-HH:MM), trust it.
-  // Otherwise, treat it as UTC by appending 'Z' before parsing.
   const hasTz = /Z$|[+-]\d{2}:\d{2}$/.test(ts);
   return new Date(hasTz ? ts : ts + 'Z');
 }
@@ -76,46 +65,37 @@ function isSameDay(a: string | Date, b: string | Date) {
 
 export default function Chat() {
   const { user: authUser } = useAuth();
-  const [profile, setProfile]             = useState<any>(null);
-  const [isChair, setIsChair]             = useState(false);
-  const [channels, setChannels]           = useState<{ blocs: any[]; dms: any[] }>({ blocs: [], dms: [] });
+  const [profile, setProfile]               = useState<any>(null);
+  const [isChair, setIsChair]               = useState(false);
+  const [channels, setChannels]             = useState<{ blocs: any[]; dms: any[] }>({ blocs: [], dms: [] });
   const [committeeUsers, setCommitteeUsers] = useState<any[]>([]);
-  const [messages, setMessages]           = useState<any[]>([]);
-  const [input, setInput]                 = useState('');
-  const [isSending, setIsSending]         = useState(false);
-  const [activeRoom, setActiveRoom]       = useState<string>('');
+  const [messages, setMessages]             = useState<any[]>([]);
+  const [input, setInput]                   = useState('');
+  const [isSending, setIsSending]           = useState(false);
+  const [activeRoom, setActiveRoom]         = useState<string>('');
   const [activeRoomName, setActiveRoomName] = useState<string>('Global Committee');
-  const [isDMModal, setIsDMModal]         = useState(false);
-  const [isBlocModal, setIsBlocModal]     = useState(false);
-  const [newBlocName, setNewBlocName]     = useState('');
-  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
-  const [lockedRooms, setLockedRooms]     = useState<Set<string>>(new Set());
-  const [unreadCounts, setUnreadCounts]   = useState<Map<string, number>>(new Map());
-  const [soundEnabled, setSoundEnabled]   = useState(() =>
+  const [isDMModal, setIsDMModal]           = useState(false);
+  const [isBlocModal, setIsBlocModal]       = useState(false);
+  const [newBlocName, setNewBlocName]       = useState('');
+  const [selectedUsers, setSelectedUsers]   = useState<string[]>([]);
+  const [lockedRooms, setLockedRooms]       = useState<Set<string>>(new Set());
+  const [unreadCounts, setUnreadCounts]     = useState<Map<string, number>>(new Map());
+  const [soundEnabled, setSoundEnabled]     = useState(() =>
     localStorage.getItem('sodmun_notif_sound') !== 'false'
   );
 
-  const scrollRef     = useRef<HTMLDivElement>(null);
-  const activeRoomRef = useRef(activeRoom);
-  const knownDMRooms  = useRef<Set<string>>(new Set());
-  const profileRef    = useRef<any>(null);
-  const committeeRef   = useRef<string>('');
-  const isChairRef     = useRef(false);
+  const scrollRef       = useRef<HTMLDivElement>(null);
+  const activeRoomRef   = useRef(activeRoom);
+  const knownDMRooms    = useRef<Set<string>>(new Set());
+  const profileRef      = useRef<any>(null);
+  const committeeRef    = useRef<string>('');
   const soundEnabledRef = useRef(true);
 
   const hasInitializedRef = useRef(false);
 
   useEffect(() => { activeRoomRef.current = activeRoom; }, [activeRoom]);
   useEffect(() => { profileRef.current = profile; if (profile?.committee) committeeRef.current = profile.committee; }, [profile]);
-  useEffect(() => { isChairRef.current = isChair; }, [isChair]);
   useEffect(() => { soundEnabledRef.current = soundEnabled; }, [soundEnabled]);
-  // Keyed on authUser?.id (a stable string) instead of the whole authUser
-  // object. Supabase silently rotates the auth token periodically, which
-  // can produce a new `authUser` object reference with the SAME id — if
-  // this effect depended on the object itself, that refresh would re-fire
-  // initializeChat() and reset activeRoom back to Global Committee, which
-  // is exactly what was happening (it looked tied to "new message arrives"
-  // because polling and token refresh just happened to coincide in time).
   useEffect(() => { if (authUser?.id) initializeChat(); }, [authUser?.id]);
 
   // ── Toggle sound ──────────────────────────────────────────────────────────
@@ -134,83 +114,48 @@ export default function Chat() {
     const chair = userData.role !== 'Delegate';
     setIsChair(chair);
 
-    // Only set the active room on genuine first load. If this effect
-    // re-fires later (e.g. after an auth token refresh), the user's
-    // current room selection — including which DM or bloc they're
-    // viewing — must be left untouched instead of being forced back
-    // to Global Committee.
     if (!hasInitializedRef.current) {
       hasInitializedRef.current = true;
       setActiveRoom(userData.committee);
       setActiveRoomName('Global Committee');
     }
 
-    // Room locks are no longer fetched separately here — the unified
-    // poller's first cycle (which fires within ~1s of mount) carries
-    // lockedRooms bundled with every message poll. This removes what
-    // used to be a guaranteed extra request on every single poll cycle
-    // (room_locks?select=recipient_group firing in lockstep with
-    // messages every few seconds), now it's zero additional requests.
-    await refreshSidebar(userData, chair);
+    await refreshSidebar(userData);
   };
 
-  // ── Sidebar ───────────────────────────────────────────────────────────────
-  const refreshSidebar = async (userData: any = profile, chair: boolean = isChair) => {
+  // ── Sidebar — same logic for everyone, chairs only see their own DMs ──────
+  const refreshSidebar = async (userData: any = profile) => {
     if (!userData) return;
-    if (chair) {
-      try {
-        const result = await chairGetSidebar();
-        setCommitteeUsers(result.committeeUsers || []);
-        setChannels({ blocs: result.blocs || [], dms: result.dms || [] });
-        (result.dms || []).forEach((dm: any) => knownDMRooms.current.add(dm.roomId));
-      } catch (e) { console.error(e); }
-    } else {
-      const { data: peers } = await supabase.from('users').select('*').eq('committee', userData.committee);
-      if (peers) setCommitteeUsers(peers);
-      const { data: memberOf } = await supabase.from('bloc_members').select('blocs(*)').eq('user_id', authUser?.id);
-      const myBlocs = (memberOf?.map((b: any) => b.blocs) ?? []).filter((b: any) => b && b.committee === userData.committee);
-      const { data: myDMs } = await supabase.from('messages').select('recipient_group')
-        .ilike('recipient_group', `%${authUser?.id}%`).filter('recipient_group', 'ilike', 'dm_%');
-      const uniqueDMs = Array.from(new Set((myDMs || []).map((m: any) => m.recipient_group)));
-      const mappedDMs = uniqueDMs.map(roomId => {
-        const otherId = (roomId as string).replace('dm_', '').split('_').find(id => id !== authUser?.id);
-        const peer = (peers || []).find((p: any) => p.id === otherId);
-        return { roomId, name: peer ? (peer.delegation || peer.role) : 'Direct Signal' };
-      });
-      setChannels({ blocs: myBlocs, dms: mappedDMs });
-    }
+    const { data: peers } = await supabase.from('users').select('*').eq('committee', userData.committee);
+    if (peers) setCommitteeUsers(peers);
+    const { data: memberOf } = await supabase.from('bloc_members').select('blocs(*)').eq('user_id', authUser?.id);
+    const myBlocs = (memberOf?.map((b: any) => b.blocs) ?? []).filter((b: any) => b && b.committee === userData.committee);
+    const { data: myDMs } = await supabase.from('messages').select('recipient_group')
+      .ilike('recipient_group', `%${authUser?.id}%`).filter('recipient_group', 'ilike', 'dm_%');
+    const uniqueDMs = Array.from(new Set((myDMs || []).map((m: any) => m.recipient_group)));
+    const mappedDMs = uniqueDMs.map(roomId => {
+      const otherId = (roomId as string).replace('dm_', '').split('_').find(id => id !== authUser?.id);
+      const peer = (peers || []).find((p: any) => p.id === otherId);
+      return { roomId, name: peer ? (peer.delegation || peer.role) : 'Direct Signal' };
+    });
+    setChannels({ blocs: myBlocs, dms: mappedDMs });
   };
 
-  // ── Fetch messages ────────────────────────────────────────────────────────
+  // ── Fetch messages — same path for everyone ───────────────────────────────
   useEffect(() => { if (activeRoom) fetchMessages(activeRoom); }, [activeRoom]);
 
   const fetchMessages = async (roomId: string) => {
     try {
-      if (isChair) {
-        const result = await chairGetRoomMessages(roomId);
-        setMessages(result.messages || []);
-      } else {
-        const { data } = await supabase.from('messages').select('*, users(*)')
-          .eq('recipient_group', roomId).order('timestamp', { ascending: true });
-        if (data) setMessages(data);
-      }
-      // Clear unread for this room
+      const { data } = await supabase.from('messages').select('*, users(*)')
+        .eq('recipient_group', roomId).order('timestamp', { ascending: true });
+      if (data) setMessages(data);
       setUnreadCounts(prev => { const m = new Map(prev); m.delete(roomId); return m; });
       scrollToBottom();
     } catch (e) { console.error(e); }
   };
 
-  // ── Shared polling — subscribes to the unified cross-tab poller ─────────────
-  // No private timer here. committeeApi.ts runs ONE poll per browser tab
-  // (shared with App.tsx's notification system), and only ONE tab per
-  // browser actually hits the server — other open app.sodmun.com tabs
-  // receive results via BroadcastChannel for free. Each poll now returns
-  // BOTH messages and room locks in a single request (see poll_chat in
-  // committee-api), so there's exactly one HTTP round trip per poll
-  // cycle, system-wide — not the 2-3 separate requests it used to be.
+  // ── Shared polling ────────────────────────────────────────────────────────
   const handlePollResults = useCallback((incoming: any[], lockedRoomsList: string[] | null) => {
-    // Apply lock state on every poll, even if no new messages — locks can
-    // change independently of message traffic (a chair pausing a quiet room)
     if (lockedRoomsList !== null) {
       setLockedRooms(new Set(lockedRoomsList));
     }
@@ -231,7 +176,6 @@ export default function Chat() {
       }
       if (rg?.startsWith('dm_') && !knownDMRooms.current.has(rg)) {
         knownDMRooms.current.add(rg);
-        if (isChairRef.current) bustSidebarCache();
         refreshSidebar();
       }
     });
@@ -243,29 +187,18 @@ export default function Chat() {
     return unsubscribe;
   }, [authUser?.id, handlePollResults]);
 
-  // Thin wrapper kept for call sites (e.g. sendMessage) that want to nudge
-  // an immediate poll rather than waiting for the next 3s cycle
   const pollForMessages = useCallback(() => { triggerImmediatePoll(); }, []);
-
-  // Room locks no longer have their own polling loop — they're bundled
-  // into every poll_chat response via handlePollResults above. This
-  // removes what used to be a guaranteed extra request every 10s, on
-  // top of the message poll, system-wide. One poller, one request,
-  // both pieces of data.
 
   const scrollToBottom = () => setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: 'smooth' }), 80);
 
   // ── Send ──────────────────────────────────────────────────────────────────
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || !activeRoom || isObserving || isRoomLocked) return;
+    if (!input.trim() || !activeRoom || isRoomLocked) return;
     const content = input;
     setInput('');
     setIsSending(true);
 
-    // Optimistic local bubble — shows immediately with a sending pulse so
-    // the message never feels "lost" during the gap before the next poll
-    // confirms it actually landed in the DB
     const tempId = `temp-${Date.now()}`;
     setMessages(prev => [...prev, {
       id: tempId,
@@ -280,17 +213,9 @@ export default function Chat() {
 
     try {
       await supabase.from('messages').insert([{ sender_id: authUser?.id, content, recipient_group: activeRoom }]);
-      // Optimistically poll right away instead of waiting up to 3s — covers
-      // the case where the sender is in a different room than what they just
-      // posted to (e.g. just created a bloc and sent the first message).
-      // The poll's fetchMessages() will replace this temp bubble with the
-      // real row once it lands.
       await pollForMessages();
     } finally {
       setIsSending(false);
-      // Safety net: if the poll somehow didn't replace it (e.g. user
-      // switched rooms mid-send), clear the sending flag after a beat
-      // so it doesn't pulse forever
       setTimeout(() => {
         setMessages(prev => prev.map(m => m.id === tempId ? { ...m, _sending: false } : m));
       }, 4000);
@@ -308,7 +233,6 @@ export default function Chat() {
     const { data: bloc } = await supabase.from('blocs').insert([{ name: newBlocName, committee: profile?.committee }]).select().single();
     if (bloc) {
       await supabase.from('bloc_members').insert([authUser?.id, ...selectedUsers].map(uid => ({ user_id: uid, bloc_id: bloc.id })));
-      bustSidebarCache();
       await refreshSidebar();
       setIsBlocModal(false); setNewBlocName(''); setSelectedUsers([]);
       switchRoom(`bloc_${bloc.id}`, bloc.name);
@@ -320,7 +244,6 @@ export default function Chat() {
     setUnreadCounts(prev => { const m = new Map(prev); m.delete(id); return m; });
   };
 
-  const isObserving  = isChair && activeRoom.startsWith('dm_') && !activeRoom.includes(authUser?.id ?? '');
   const isRoomLocked = lockedRooms.has(activeRoom) && !isChair;
 
   // ── Render messages with date separators ──────────────────────────────────
@@ -389,9 +312,7 @@ export default function Chat() {
         .plus-btn-sm:hover { background:var(--accent); color:#fff; }
         .sec-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; padding:0 2px; }
         .sec-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:2px; color:var(--text-muted); }
-        .observe-banner { display:flex; align-items:center; gap:7px; background:var(--accent-soft); border-bottom:1px solid var(--accent-mid); padding:8px 20px; font-size:11px; font-weight:700; color:var(--accent); letter-spacing:0.3px; flex-shrink:0; }
         .lock-banner { display:flex; align-items:center; gap:8px; background:rgba(220,38,38,0.07); border-bottom:1px solid rgba(220,38,38,0.18); padding:10px 20px; font-size:12px; font-weight:700; color:#DC2626; flex-shrink:0; }
-        .obs-chip { font-size:9px; font-weight:700; background:rgba(113,113,122,0.10); color:var(--text-muted); padding:1px 6px; border-radius:99px; flex-shrink:0; display:flex; align-items:center; gap:3px; }
         .lock-chip { font-size:9px; font-weight:700; background:rgba(220,38,38,0.10); color:#DC2626; padding:1px 6px; border-radius:99px; flex-shrink:0; }
         ::-webkit-scrollbar { width:4px; } ::-webkit-scrollbar-track { background:transparent; } ::-webkit-scrollbar-thumb { background:rgba(128,128,128,0.25); border-radius:99px; }
         @media (max-width:768px) {
@@ -399,7 +320,6 @@ export default function Chat() {
           .chat-shell { border-radius:14px; }
           .chat-page-wrap { padding: 16px 12px 0 !important; }
           .chat-page-wrap .chat-shell { border-radius:12px; }
-          /* Input bar needs extra bottom padding for tab bar */
           .chat-main-inner form { padding-bottom: calc(env(safe-area-inset-bottom) + 70px) !important; }
         }
       `}</style>
@@ -411,21 +331,13 @@ export default function Chat() {
           <p style={{ color:'var(--accent)', fontWeight:600, fontSize:'12px', marginTop:'4px' }}>{profile?.committee} Network</p>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-          {/* Sync indicator — Chat runs on pure polling, no WebSocket */}
           <div
             title="Updates sync every 3 seconds"
             style={{ display:'flex', alignItems:'center', gap:6, background:'var(--bg-elevated)', border:'1px solid var(--border)', borderRadius:99, padding:'5px 11px' }}
           >
-            <div style={{
-              width:7, height:7, borderRadius:'50%',
-              background: '#22C55E',
-              boxShadow: '0 0 0 3px rgba(34,197,94,0.15)',
-            }} />
-            <span style={{ fontSize:11, fontWeight:600, color:'var(--text-muted)' }}>
-              Synced
-            </span>
+            <div style={{ width:7, height:7, borderRadius:'50%', background:'#22C55E', boxShadow:'0 0 0 3px rgba(34,197,94,0.15)' }} />
+            <span style={{ fontSize:11, fontWeight:600, color:'var(--text-muted)' }}>Synced</span>
           </div>
-          {/* Sound toggle */}
           <button
             onClick={toggleSound}
             title={soundEnabled ? 'Mute notifications' : 'Enable notification sounds'}
@@ -433,7 +345,6 @@ export default function Chat() {
           >
             {soundEnabled ? <IconBell /> : <IconBellOff />}
           </button>
-    
         </div>
       </div>
 
@@ -454,7 +365,7 @@ export default function Chat() {
             <span className="sec-label">Bloc Group Chats</span>
             {!isChair && <button className="plus-btn-sm" onClick={() => setIsBlocModal(true)}><IconPlus /></button>}
           </div>
-          <div style={{ maxHeight:'180px', overflowY:'auto' }}>
+          <div>
             {channels.blocs.length === 0 && <p style={{ fontSize:12, color:'var(--text-muted)', padding:'4px 4px 8px', fontWeight:500 }}>No blocs yet</p>}
             {channels.blocs.map((b: any) => (
               <div key={b.id} className={`ch-btn ${activeRoom === `bloc_${b.id}` ? 'active' : 'inactive'}`} onClick={() => switchRoom(`bloc_${b.id}`, b.name)}>
@@ -469,7 +380,7 @@ export default function Chat() {
           </div>
 
           <div className="sec-header" style={{ marginTop:'20px' }}>
-            <span className="sec-label">{isChair ? 'All DMs' : 'Direct Messages'}</span>
+            <span className="sec-label">Direct Messages</span>
             <button className="plus-btn-sm" onClick={() => setIsDMModal(true)}><IconPlus /></button>
           </div>
           <div style={{ flex:1, overflowY:'auto' }}>
@@ -478,7 +389,6 @@ export default function Chat() {
               <div key={dm.roomId} title={dm.name} className={`ch-btn ${activeRoom === dm.roomId ? 'active' : 'inactive'}`} onClick={() => switchRoom(dm.roomId, dm.name)}>
                 <span style={{ opacity:0.7 }}><IconMessage /></span>
                 <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1 }}>{dm.name}</span>
-                {isChair && !dm.roomId.includes(authUser?.id ?? '') && <span className="obs-chip"><IconEye />obs</span>}
                 {(unreadCounts.get(dm.roomId) ?? 0) > 0 && activeRoom !== dm.roomId && (
                   <span className="unread-dot">{unreadCounts.get(dm.roomId)}</span>
                 )}
@@ -497,8 +407,7 @@ export default function Chat() {
             )}
           </div>
 
-          {/* Banners */}
-          {isObserving && <div className="observe-banner"><IconEye /> Chair observation mode — read-only</div>}
+          {/* Lock banner */}
           {isRoomLocked && <div className="lock-banner"><IconLock /> This channel has been paused by the Chair</div>}
 
           {/* Messages */}
@@ -513,21 +422,19 @@ export default function Chat() {
           </div>
 
           {/* Input */}
-          {!isObserving && (
-            <form onSubmit={sendMessage} style={{ padding:'14px 18px', borderTop:'1px solid var(--border)', background:'var(--bg-elevated)', display:'flex', gap:'10px', alignItems:'center', flexShrink:0 }}>
-              <input
-                style={{ flex:1, background:'var(--bg-input)', border:'1px solid var(--border-strong)', color:'var(--text-primary)', padding:'12px 16px', borderRadius:'12px', fontSize:'14px', fontFamily:'Manrope,sans-serif', outline:'none', transition:'border-color 0.15s', marginBottom:0, opacity: isRoomLocked ? 0.5 : 1 }}
-                value={input} onChange={e => setInput(e.target.value)}
-                placeholder={isRoomLocked ? 'Chat paused by Chair…' : `Message ${activeRoomName}…`}
-                disabled={isRoomLocked}
-                onFocus={e => e.currentTarget.style.borderColor='var(--accent)'}
-                onBlur={e => e.currentTarget.style.borderColor='var(--border-strong)'}
-              />
-              <button type="submit" disabled={isRoomLocked} style={{ background:'var(--accent)', border:'none', color:'#fff', width:'44px', height:'44px', borderRadius:'12px', cursor: isRoomLocked ? 'not-allowed' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, boxShadow:'0 2px 8px rgba(240,124,0,0.25)', opacity: isRoomLocked ? 0.4 : 1 }}>
-                <IconSend />
-              </button>
-            </form>
-          )}
+          <form onSubmit={sendMessage} style={{ padding:'14px 18px', borderTop:'1px solid var(--border)', background:'var(--bg-elevated)', display:'flex', gap:'10px', alignItems:'center', flexShrink:0 }}>
+            <input
+              style={{ flex:1, background:'var(--bg-input)', border:'1px solid var(--border-strong)', color:'var(--text-primary)', padding:'12px 16px', borderRadius:'12px', fontSize:'14px', fontFamily:'Manrope,sans-serif', outline:'none', transition:'border-color 0.15s', marginBottom:0, opacity: isRoomLocked ? 0.5 : 1 }}
+              value={input} onChange={e => setInput(e.target.value)}
+              placeholder={isRoomLocked ? 'Chat paused by Chair…' : `Message ${activeRoomName}…`}
+              disabled={isRoomLocked}
+              onFocus={e => e.currentTarget.style.borderColor='var(--accent)'}
+              onBlur={e => e.currentTarget.style.borderColor='var(--border-strong)'}
+            />
+            <button type="submit" disabled={isRoomLocked} style={{ background:'var(--accent)', border:'none', color:'#fff', width:'44px', height:'44px', borderRadius:'12px', cursor: isRoomLocked ? 'not-allowed' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, boxShadow:'0 2px 8px rgba(240,124,0,0.25)', opacity: isRoomLocked ? 0.4 : 1 }}>
+              <IconSend />
+            </button>
+          </form>
         </div>
       </div>
 

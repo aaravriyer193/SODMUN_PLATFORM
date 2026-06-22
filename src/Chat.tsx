@@ -538,9 +538,9 @@ export default function Chat() {
       {/* ── DM Modal ── */}
       {isDMModal && (
         <div className="overlay">
-          <div className="modal">
+          <div className="modal" style={{ display:'flex', flexDirection:'column', maxHeight:'80vh' }}>
             <h2>Start a Direct Message</h2>
-            <div style={{ maxHeight:'280px', overflowY:'auto', border:'1px solid var(--border)', borderRadius:'12px', overflow:'hidden' }}>
+            <div style={{ flex:1, overflowY:'auto', border:'1px solid var(--border)', borderRadius:'12px' }}>
               {committeeUsers.filter((u: any) => u.id !== authUser?.id).map((u: any) => (
                 <div key={u.id} onClick={() => startDM(u)}
                   style={{ padding:'13px 16px', cursor:'pointer', borderBottom:'1px solid var(--border)', fontSize:'13px', fontWeight:600, display:'flex', alignItems:'center', gap:'10px', color:'var(--text-primary)', transition:'background 0.1s' }}
@@ -560,10 +560,10 @@ export default function Chat() {
       {/* ── Bloc Modal ── */}
       {isBlocModal && (
         <div className="overlay">
-          <div className="modal">
+          <div className="modal" style={{ display:'flex', flexDirection:'column', maxHeight:'80vh' }}>
             <h2>New Bloc Group Chat</h2>
             <input className="dark-input" value={newBlocName} onChange={e => setNewBlocName(e.target.value)} placeholder="Bloc name…" />
-            <div style={{ maxHeight:'160px', overflowY:'auto', border:'1px solid var(--border)', borderRadius:'12px', overflow:'hidden', marginBottom:'14px' }}>
+            <div style={{ flex:1, overflowY:'auto', border:'1px solid var(--border)', borderRadius:'12px', marginBottom:'14px' }}>
               {committeeUsers.filter((u: any) => u.role === 'Delegate' && u.id !== authUser?.id).map((u: any) => (
                 <div key={u.id}
                   onClick={() => setSelectedUsers(prev => prev.includes(u.id) ? prev.filter(i => i !== u.id) : [...prev, u.id])}

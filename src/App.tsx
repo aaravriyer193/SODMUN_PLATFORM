@@ -259,7 +259,7 @@ const NewBlocModal = ({ onClose, profile, authUser }: { onClose: ()=>void; profi
     <div onClick={e=>{ if(e.target===e.currentTarget) onClose(); }}
       style={{ position:'fixed', inset:0, zIndex:2000, background:'rgba(10,8,5,0.35)', backdropFilter:'blur(12px)', WebkitBackdropFilter:'blur(12px)', display:'flex', alignItems:'center', justifyContent:'center', animation:'fadeIn 0.15s ease' }}>
       <style>{`@keyframes fadeIn{from{opacity:0}to{opacity:1}} @keyframes modalIn{from{opacity:0;transform:translateY(14px) scale(0.97)}to{opacity:1;transform:translateY(0) scale(1)}} .nbm{animation:modalIn 0.22s cubic-bezier(0.34,1.4,0.64,1);}`}</style>
-      <div className="nbm" style={{ background:'rgba(255,255,255,0.97)', backdropFilter:'blur(24px)', border:'1px solid rgba(255,255,255,0.8)', borderRadius:24, width:420, boxShadow:'0 32px 80px rgba(0,0,0,0.14),0 8px 24px rgba(0,0,0,0.07)', overflow:'hidden' }}>
+      <div className="nbm" style={{ background:'rgba(255,255,255,0.97)', backdropFilter:'blur(24px)', border:'1px solid rgba(255,255,255,0.8)', borderRadius:24, width:420, boxShadow:'0 32px 80px rgba(0,0,0,0.14),0 8px 24px rgba(0,0,0,0.07)', overflow:'hidden', maxHeight:'85vh', display:'flex', flexDirection:'column' }}>
         <div style={{ padding:'24px 24px 0', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
           <div>
             <p style={{ fontSize:'10px', fontWeight:700, textTransform:'uppercase', letterSpacing:'2px', color:'#F07C00', marginBottom:4 }}>{step==='name'?'Step 1 of 2':'Step 2 of 2'}</p>
@@ -270,7 +270,7 @@ const NewBlocModal = ({ onClose, profile, authUser }: { onClose: ()=>void; profi
         <div style={{ margin:'16px 24px 0', height:3, background:'rgba(0,0,0,0.06)', borderRadius:99, overflow:'hidden' }}>
           <div style={{ height:'100%', width:step==='name'?'50%':'100%', background:'#F07C00', borderRadius:99, transition:'width 0.3s ease' }} />
         </div>
-        <div style={{ padding:'20px 24px 24px' }}>
+        <div style={{ padding:'20px 24px 24px', display:'flex', flexDirection:'column', flex:1, minHeight:0 }}>
           {done ? (
             <div style={{ textAlign:'center', padding:'20px 0' }}>
               <div style={{ width:56, height:56, borderRadius:'50%', background:'rgba(34,197,94,0.10)', border:'2px solid rgba(34,197,94,0.25)', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 12px', fontSize:24 }}>✓</div>
@@ -284,7 +284,7 @@ const NewBlocModal = ({ onClose, profile, authUser }: { onClose: ()=>void; profi
           ) : (
             <>
               <p style={{ fontSize:12, color:'#71717A', fontWeight:500, marginBottom:10 }}>Select delegates for <strong style={{ color:'#18181B' }}>{blocName}</strong></p>
-              <div style={{ maxHeight:220, overflowY:'auto', border:'1px solid rgba(0,0,0,0.09)', borderRadius:12, marginBottom:14, background:'#FAFAF8' }}>
+              <div style={{ flex:1, overflowY:'auto', border:'1px solid rgba(0,0,0,0.09)', borderRadius:12, marginBottom:14, background:'#FAFAF8' }}>
                 {users.length===0 && <p style={{ padding:20, textAlign:'center', color:'#A1A1AA', fontSize:13 }}>No other delegates found</p>}
                 {users.map((u,i) => { const s=selected.includes(u.id); return (
                   <div key={u.id} onClick={()=>toggle(u.id)} style={{ display:'flex', alignItems:'center', gap:12, padding:'11px 14px', cursor:'pointer', borderBottom:i<users.length-1?'1px solid rgba(0,0,0,0.06)':'none', background:s?'rgba(240,124,0,0.05)':'transparent', transition:'background 0.1s' }}>

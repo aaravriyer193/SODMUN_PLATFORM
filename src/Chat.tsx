@@ -323,6 +323,7 @@ export default function Chat() {
           .chat-page-wrap { padding: 16px 12px 0 !important; }
           .chat-page-wrap .chat-shell { border-radius:12px; }
           .chat-main-inner form { padding-bottom: calc(env(safe-area-inset-bottom) + 70px) !important; }
+          .chat-page-header { display:none; }
         }
         .mobile-drawer-backdrop { display:none; }
         .mobile-drawer { display:none; }
@@ -337,7 +338,7 @@ export default function Chat() {
       `}</style>
 
       {/* Page header */}
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', flexShrink:0 }}>
+      <div className="chat-page-header" style={{ display:'flex', justifyContent:'space-between', alignItems:'center', flexShrink:0 }}>
         <div>
           <h1 className="delegation-brand">Communications</h1>
           <p style={{ color:'var(--accent)', fontWeight:600, fontSize:'12px', marginTop:'4px' }}>{profile?.committee} Network</p>
@@ -413,7 +414,7 @@ export default function Chat() {
         <div className="chat-main-inner">
           {/* Header */}
           <div style={{ padding:'14px 20px', borderBottom:'1px solid var(--border)', background:'var(--bg-elevated)', backdropFilter:'blur(8px)', flexShrink:0, display:'flex', alignItems:'center', gap:10 }}>
-            <button className="mobile-channel-btn" onClick={() => setMobileSidebarOpen(true)}>
+            <button className="mobile-channel-btn" onClick={e => { e.stopPropagation(); setMobileSidebarOpen(true); }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
               {/* unread badge on the burger */}
               {Array.from(unreadCounts.values()).reduce((a, b) => a + b, 0) > 0 && (
@@ -463,7 +464,7 @@ export default function Chat() {
       {mobileSidebarOpen && (
         <>
           <div className="mobile-drawer-backdrop" onClick={() => setMobileSidebarOpen(false)} />
-          <div className="mobile-drawer">
+          <div className="mobile-drawer" onClick={e => e.stopPropagation()}>
             {/* Drawer header */}
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20 }}>
               <span style={{ fontSize:13, fontWeight:800, color:'var(--text-primary)' }}>Channels</span>
@@ -515,6 +516,21 @@ export default function Chat() {
                 )}
               </div>
             ))}
+
+            {/* Drawer footer */}
+            <div style={{ marginTop:'auto', paddingTop:20, borderTop:'1px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+              <div>
+                <p style={{ fontSize:11, fontWeight:700, color:'var(--accent)', textTransform:'uppercase', letterSpacing:'1px' }}>{profile?.committee}</p>
+                <p style={{ fontSize:11, color:'var(--text-muted)', fontWeight:500, marginTop:2 }}>{profile?.delegation || profile?.role}</p>
+              </div>
+              <button
+                onClick={toggleSound}
+                title={soundEnabled ? 'Mute notifications' : 'Enable notification sounds'}
+                style={{ background:'var(--bg-elevated)', border:'1px solid var(--border)', borderRadius:9, width:36, height:36, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color: soundEnabled ? 'var(--accent)' : 'var(--text-muted)', flexShrink:0 }}
+              >
+                {soundEnabled ? <IconBell /> : <IconBellOff />}
+              </button>
+            </div>
           </div>
         </>
       )}

@@ -433,11 +433,7 @@ export default function Chat() {
           >
             {soundEnabled ? <IconBell /> : <IconBellOff />}
           </button>
-          {isChair && (
-            <div style={{ fontSize:11, fontWeight:700, color:'var(--accent)', background:'var(--accent-soft)', border:'1px solid var(--accent-mid)', borderRadius:99, padding:'5px 14px', letterSpacing:'0.5px', textTransform:'uppercase' }}>
-              Chair View — Full Access
-            </div>
-          )}
+    
         </div>
       </div>
 

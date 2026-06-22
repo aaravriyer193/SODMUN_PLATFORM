@@ -195,11 +195,11 @@ export default function Dashboard() {
       </div>
 
       {/* Main grid */}
-      <div className="main-grid">
+      <div className="main-grid" style={{ minWidth:0 }}>
         {/* Feed */}
-        <div className="panel">
+        <div className="panel" style={{ minWidth:0 }}>
           <span className="label"><IconGlobe /> {isChair ? 'All Committee Activity' : 'Intelligence Feed'}</span>
-          <div style={{ maxHeight:'600px', overflowY:'auto' }}>
+          <div style={{ overflowY:'auto' }}>
             {allChats.map((m: any) => {
               const type = getChannelType(m.recipient_group);
               const chip = CHIP[type] ?? CHIP.global;
@@ -225,7 +225,7 @@ export default function Dashboard() {
         </div>
 
         {/* Right column */}
-        <div style={{ display:'flex', flexDirection:'column', gap:'20px' }}>
+        <div style={{ display:'flex', flexDirection:'column', gap:'20px', minWidth:0 }}>
           {isChair && (
             <div className="panel">
               <span className="label"><IconUsers /> Committee Overview</span>

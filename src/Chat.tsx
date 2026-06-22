@@ -83,6 +83,7 @@ export default function Chat() {
   const [soundEnabled, setSoundEnabled]     = useState(() =>
     localStorage.getItem('sodmun_notif_sound') !== 'false'
   );
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   const scrollRef       = useRef<HTMLDivElement>(null);
   const activeRoomRef   = useRef(activeRoom);
@@ -242,6 +243,7 @@ export default function Chat() {
   const switchRoom = (id: string, name: string) => {
     setActiveRoom(id); setActiveRoomName(name); setMessages([]);
     setUnreadCounts(prev => { const m = new Map(prev); m.delete(id); return m; });
+    setMobileSidebarOpen(false);
   };
 
   const isRoomLocked = lockedRooms.has(activeRoom) && !isChair;
@@ -322,6 +324,16 @@ export default function Chat() {
           .chat-page-wrap .chat-shell { border-radius:12px; }
           .chat-main-inner form { padding-bottom: calc(env(safe-area-inset-bottom) + 70px) !important; }
         }
+        .mobile-drawer-backdrop { display:none; }
+        .mobile-drawer { display:none; }
+        .mobile-channel-btn { display:none; }
+        @media (max-width:768px) {
+          .mobile-channel-btn { display:flex; align-items:center; gap:8px; padding:8px 12px; background:var(--bg-elevated); border:1px solid var(--border); border-radius:10px; cursor:pointer; font-size:13px; font-weight:600; color:var(--text-primary); flex-shrink:0; }
+          .mobile-drawer-backdrop { display:block; position:fixed; inset:0; background:rgba(0,0,0,0.45); backdrop-filter:blur(6px); z-index:400; animation:mdbFadeIn 0.18s ease; }
+          @keyframes mdbFadeIn { from{opacity:0} to{opacity:1} }
+          .mobile-drawer { display:flex; flex-direction:column; position:fixed; top:0; left:0; bottom:0; width:80vw; max-width:300px; background:var(--bg-sidebar); border-right:1px solid var(--border); z-index:401; padding:20px 14px 32px; overflow-y:auto; animation:mdbSlideIn 0.22s cubic-bezier(0.4,0,0.2,1); }
+          @keyframes mdbSlideIn { from{transform:translateX(-100%)} to{transform:translateX(0)} }
+        }
       `}</style>
 
       {/* Page header */}
@@ -401,7 +413,16 @@ export default function Chat() {
         <div className="chat-main-inner">
           {/* Header */}
           <div style={{ padding:'14px 20px', borderBottom:'1px solid var(--border)', background:'var(--bg-elevated)', backdropFilter:'blur(8px)', flexShrink:0, display:'flex', alignItems:'center', gap:10 }}>
-            <h2 style={{ fontSize:'15px', fontWeight:700, color:'var(--text-primary)', margin:0, flex:1 }}>{activeRoomName}</h2>
+            <button className="mobile-channel-btn" onClick={() => setMobileSidebarOpen(true)}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+              {/* unread badge on the burger */}
+              {Array.from(unreadCounts.values()).reduce((a, b) => a + b, 0) > 0 && (
+                <span style={{ minWidth:16, height:16, borderRadius:99, background:'var(--accent)', color:'#fff', fontSize:9, fontWeight:800, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 4px' }}>
+                  {Array.from(unreadCounts.values()).reduce((a, b) => a + b, 0)}
+                </span>
+              )}
+            </button>
+            <h2 style={{ fontSize:'15px', fontWeight:700, color:'var(--text-primary)', margin:0, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{activeRoomName}</h2>
             {lockedRooms.has(activeRoom) && (
               <span style={{ fontSize:10, fontWeight:800, color:'#DC2626', background:'rgba(220,38,38,0.08)', border:'1px solid rgba(220,38,38,0.20)', borderRadius:99, padding:'3px 10px', letterSpacing:'1px', textTransform:'uppercase' }}>Paused</span>
             )}
@@ -437,6 +458,66 @@ export default function Chat() {
           </form>
         </div>
       </div>
+
+      {/* ── Mobile channel drawer ── */}
+      {mobileSidebarOpen && (
+        <>
+          <div className="mobile-drawer-backdrop" onClick={() => setMobileSidebarOpen(false)} />
+          <div className="mobile-drawer">
+            {/* Drawer header */}
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20 }}>
+              <span style={{ fontSize:13, fontWeight:800, color:'var(--text-primary)' }}>Channels</span>
+              <button onClick={() => setMobileSidebarOpen(false)} style={{ background:'transparent', border:'none', cursor:'pointer', color:'var(--text-muted)', padding:4, display:'flex' }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+
+            {/* Global */}
+            <div className="sec-label" style={{ marginBottom:8 }}>Public</div>
+            <div className={`ch-btn ${activeRoom === profile?.committee ? 'active' : 'inactive'}`} onClick={() => switchRoom(profile?.committee, 'Global Committee')}>
+              <span style={{ opacity:0.7 }}><IconGlobe /></span>
+              <span style={{ flex:1, overflow:'hidden', textOverflow:'ellipsis' }}>Global Committee</span>
+              {lockedRooms.has(profile?.committee) && <span className="lock-chip">Paused</span>}
+              {(unreadCounts.get(profile?.committee) ?? 0) > 0 && activeRoom !== profile?.committee && (
+                <span className="unread-dot">{unreadCounts.get(profile?.committee)}</span>
+              )}
+            </div>
+
+            {/* Blocs */}
+            <div className="sec-header" style={{ marginTop:20 }}>
+              <span className="sec-label">Bloc Group Chats</span>
+              {!isChair && <button className="plus-btn-sm" onClick={() => { setMobileSidebarOpen(false); setIsBlocModal(true); }}><IconPlus /></button>}
+            </div>
+            {channels.blocs.length === 0 && <p style={{ fontSize:12, color:'var(--text-muted)', padding:'4px 4px 8px', fontWeight:500 }}>No blocs yet</p>}
+            {channels.blocs.map((b: any) => (
+              <div key={b.id} className={`ch-btn ${activeRoom === `bloc_${b.id}` ? 'active' : 'inactive'}`} onClick={() => switchRoom(`bloc_${b.id}`, b.name)}>
+                <span style={{ opacity:0.7 }}><IconLock /></span>
+                <span style={{ overflow:'hidden', textOverflow:'ellipsis', flex:1 }}>{b.name}</span>
+                {lockedRooms.has(`bloc_${b.id}`) && <span className="lock-chip">Paused</span>}
+                {(unreadCounts.get(`bloc_${b.id}`) ?? 0) > 0 && activeRoom !== `bloc_${b.id}` && (
+                  <span className="unread-dot">{unreadCounts.get(`bloc_${b.id}`)}</span>
+                )}
+              </div>
+            ))}
+
+            {/* DMs */}
+            <div className="sec-header" style={{ marginTop:20 }}>
+              <span className="sec-label">Direct Messages</span>
+              <button className="plus-btn-sm" onClick={() => { setMobileSidebarOpen(false); setIsDMModal(true); }}><IconPlus /></button>
+            </div>
+            {channels.dms.length === 0 && <p style={{ fontSize:12, color:'var(--text-muted)', padding:'4px 4px 8px', fontWeight:500 }}>No messages yet</p>}
+            {channels.dms.map((dm: any) => (
+              <div key={dm.roomId} title={dm.name} className={`ch-btn ${activeRoom === dm.roomId ? 'active' : 'inactive'}`} onClick={() => switchRoom(dm.roomId, dm.name)}>
+                <span style={{ opacity:0.7 }}><IconMessage /></span>
+                <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1 }}>{dm.name}</span>
+                {(unreadCounts.get(dm.roomId) ?? 0) > 0 && activeRoom !== dm.roomId && (
+                  <span className="unread-dot">{unreadCounts.get(dm.roomId)}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       {/* ── DM Modal ── */}
       {isDMModal && (

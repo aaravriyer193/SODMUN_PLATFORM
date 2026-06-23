@@ -12,48 +12,77 @@ export default function SetPassword() {
   const [errorMsg, setErrorMsg]   = useState('');
   const [tokenValid, setTokenValid] = useState<boolean|null>(null);
 
-  // On mount: extract token from URL and verify it
+  // On mount: try to establish a session from the URL token/hash,
+  // then check last_sign_in_at — if null the user has never logged in
+  // (i.e. never set a password), so we allow them to proceed regardless
+  // of whether the invite token itself was already consumed by a bot/preview.
   useEffect(() => {
-    const hash   = window.location.hash;
-    const search = window.location.search;
+    const trySession = async () => {
+      const hash   = window.location.hash;
+      const search = window.location.search;
 
-    // Supabase puts the token in the URL fragment as access_token
-    // after the OTP verification redirect. We verify the session exists.
-    const params = new URLSearchParams(hash.replace('#', '?'));
-    const accessToken  = params.get('access_token');
-    const refreshToken = params.get('refresh_token');
-    const type         = params.get('type');
+      const params       = new URLSearchParams(hash.replace('#', '?'));
+      const accessToken  = params.get('access_token');
+      const refreshToken = params.get('refresh_token');
+      const type         = params.get('type');
 
-    if (accessToken && refreshToken && type === 'invite') {
-      supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
-        .then(({ error }) => {
-          if (error) {
-            setTokenValid(false);
-            setErrorMsg('This invite link has expired (links are valid for 11 days) or has already been used.');
-          } else {
-            setTokenValid(true);
-          }
-        });
-    } else {
-      // Try search params fallback (some clients)
-      const sp = new URLSearchParams(search);
+      // Attempt 1: hash-based session (standard Supabase invite redirect)
+      if (accessToken && refreshToken && type === 'invite') {
+        const { error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+        if (!error) {
+          await checkLastSignIn();
+          return;
+        }
+      }
+
+      // Attempt 2: token_hash in query string (some email clients)
+      const sp    = new URLSearchParams(search);
       const token = sp.get('token');
       if (token) {
-        supabase.auth.verifyOtp({ token_hash: token, type: 'invite' })
-          .then(({ error }) => {
-            if (error) {
-              setTokenValid(false);
-              setErrorMsg('This invite link has expired (links are valid for 11 days) or has already been used.');
-            } else {
-              setTokenValid(true);
-            }
-          });
-      } else {
-        setTokenValid(false);
-        setErrorMsg('No invite token found. Check your email link.');
+        const { error } = await supabase.auth.verifyOtp({ token_hash: token, type: 'invite' });
+        if (!error) {
+          await checkLastSignIn();
+          return;
+        }
       }
-    }
+
+      // Attempt 3: maybe there's already an active session in this browser
+      // (e.g. user clicked the link again after a bot consumed it first)
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        await checkLastSignIn();
+        return;
+      }
+
+      // Nothing worked — truly expired or invalid
+      setTokenValid(false);
+      setErrorMsg('This invite link has expired or is invalid. Request a new one below.');
+    };
+
+    trySession();
   }, []);
+
+  // Core check: user is allowed to set their password as long as they have
+  // never successfully signed in before (last_sign_in_at is null in auth.users).
+  // This means bots/previews consuming the one-time token don't lock out the
+  // real user — they just need any valid session (from any attempt above).
+  const checkLastSignIn = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      setTokenValid(false);
+      setErrorMsg('Could not retrieve your account. Try clicking the link again.');
+      return;
+    }
+
+    if (user.last_sign_in_at == null) {
+      // Never signed in — password has never been set, allow it
+      setTokenValid(true);
+    } else {
+      // Already signed in before = password already set
+      setTokenValid(false);
+      setErrorMsg('Your password has already been set. Log in normally, or reset your password if you\'ve forgotten it.');
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

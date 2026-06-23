@@ -15,7 +15,7 @@ export default function SoddyBot() {
   const { user: authUser } = useAuth();
   const [profile, setProfile] = useState<any>(null);
   const [messages, setMessages] = useState<Message[]>([
-    { role: 'assistant', content: 'Greetings Delegate. I am Soddy, your SODMUN Intelligence AI. How may I assist you with your directives today?' }
+    { role: 'assistant', content: 'Greetings. I am Soddy, your SODMUN Intelligence AI. How may I assist you with your directives today?' }
   ]);
   const [input, setInput]       = useState('');
   const [isTyping, setIsTyping] = useState(false);

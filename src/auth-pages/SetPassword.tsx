@@ -1,103 +1,121 @@
 // SetPassword.tsx — /set-password?token=...
 // Completely isolated — no app shell, no nav links.
 // Delegate lands here from their Loops invite email.
+//
+// Token strategy: extract token from URL immediately and persist it to
+// localStorage — do NOT call setSession/verifyOtp on mount (that consumes
+// the one-time token and bots/previews opening the link first would burn it).
+// Only call setSession right before the password update on submit.
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../api';
 
+const STORAGE_KEY = 'sodmun_invite_tokens';
+
+function saveTokens(data: object) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...data, savedAt: Date.now() })); } catch {}
+}
+
+function loadSaved(): any | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    // Treat saved tokens as stale after 11 days (Supabase invite expiry)
+    if (Date.now() - parsed.savedAt > 11 * 24 * 60 * 60 * 1000) {
+      localStorage.removeItem(STORAGE_KEY);
+      return null;
+    }
+    return parsed;
+  } catch { return null; }
+}
+
+function clearTokens() {
+  try { localStorage.removeItem(STORAGE_KEY); } catch {}
+}
+
 export default function SetPassword() {
-  const [password, setPassword]   = useState('');
-  const [confirm, setConfirm]     = useState('');
-  const [status, setStatus]       = useState<'idle'|'loading'|'done'|'error'>('idle');
-  const [errorMsg, setErrorMsg]   = useState('');
-  const [tokenValid, setTokenValid] = useState<boolean|null>(null);
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm]   = useState('');
+  const [status, setStatus]     = useState<'idle'|'loading'|'done'|'error'>('idle');
+  const [errorMsg, setErrorMsg] = useState('');
+  const [ready, setReady]       = useState<boolean|null>(null); // null=checking, true=ok, false=bad
 
-  // On mount: try to establish a session from the URL token/hash,
-  // then check last_sign_in_at — if null the user has never logged in
-  // (i.e. never set a password), so we allow them to proceed regardless
-  // of whether the invite token itself was already consumed by a bot/preview.
   useEffect(() => {
-    const trySession = async () => {
-      const hash   = window.location.hash;
-      const search = window.location.search;
+    const hash   = window.location.hash;
+    const search = window.location.search;
 
-      const params       = new URLSearchParams(hash.replace('#', '?'));
-      const accessToken  = params.get('access_token');
-      const refreshToken = params.get('refresh_token');
-      const type         = params.get('type');
+    // Try hash-based tokens first (standard Supabase invite redirect)
+    const hashParams   = new URLSearchParams(hash.replace('#', '?'));
+    const accessToken  = hashParams.get('access_token');
+    const refreshToken = hashParams.get('refresh_token');
+    const type         = hashParams.get('type');
 
-      // Attempt 1: hash-based session (standard Supabase invite redirect)
-      if (accessToken && refreshToken && type === 'invite') {
-        const { error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
-        if (!error) {
-          await checkLastSignIn();
-          return;
-        }
-      }
-
-      // Attempt 2: token_hash in query string (some email clients)
-      const sp    = new URLSearchParams(search);
-      const token = sp.get('token');
-      if (token) {
-        const { error } = await supabase.auth.verifyOtp({ token_hash: token, type: 'invite' });
-        if (!error) {
-          await checkLastSignIn();
-          return;
-        }
-      }
-
-      // Attempt 3: maybe there's already an active session in this browser
-      // (e.g. user clicked the link again after a bot consumed it first)
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        await checkLastSignIn();
-        return;
-      }
-
-      // Nothing worked — truly expired or invalid
-      setTokenValid(false);
-      setErrorMsg('This invite link has expired or is invalid. Request a new one below.');
-    };
-
-    trySession();
-  }, []);
-
-  // Core check: user is allowed to set their password as long as they have
-  // never successfully signed in before (last_sign_in_at is null in auth.users).
-  // This means bots/previews consuming the one-time token don't lock out the
-  // real user — they just need any valid session (from any attempt above).
-  const checkLastSignIn = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      setTokenValid(false);
-      setErrorMsg('Could not retrieve your account. Try clicking the link again.');
+    if (accessToken && refreshToken && type === 'invite') {
+      // Save to localStorage — do NOT consume yet
+      saveTokens({ access: accessToken, refresh: refreshToken });
+      // Clean the URL so reloads don't re-parse stale hash
+      window.history.replaceState(null, '', window.location.pathname + '?saved=1');
+      setReady(true);
       return;
     }
 
-    if (user.last_sign_in_at == null) {
-      // Never signed in — password has never been set, allow it
-      setTokenValid(true);
-    } else {
-      // Already signed in before = password already set
-      setTokenValid(false);
-      setErrorMsg('Your password has already been set. Log in normally, or reset your password if you\'ve forgotten it.');
+    // Try query string token_hash (some email clients)
+    const sp        = new URLSearchParams(search);
+    const tokenHash = sp.get('token');
+    if (tokenHash) {
+      saveTokens({ tokenHash });
+      window.history.replaceState(null, '', window.location.pathname + '?saved=1');
+      setReady(true);
+      return;
     }
-  };
+
+    // No fresh token in URL — check if we saved one previously in localStorage
+    const saved = loadSaved();
+    if (saved) {
+      setReady(true);
+      return;
+    }
+
+    // Nothing found at all
+    setReady(false);
+    setErrorMsg('No invite token found. Check your email link or request a new one.');
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
 
-    if (password.length < 8) {
-      setErrorMsg('Password must be at least 8 characters.');
-      return;
-    }
-    if (password !== confirm) {
-      setErrorMsg('Passwords do not match.');
-      return;
-    }
+    if (password.length < 8) { setErrorMsg('Password must be at least 8 characters.'); return; }
+    if (password !== confirm) { setErrorMsg('Passwords do not match.'); return; }
 
     setStatus('loading');
+
+    // NOW consume the token — establish session right before the update
+    let sessionOk = false;
+
+    const saved = loadSaved();
+    if (saved) {
+      if (saved.access && saved.refresh) {
+        const { error } = await supabase.auth.setSession({ access_token: saved.access, refresh_token: saved.refresh });
+        if (!error) sessionOk = true;
+      } else if (saved.tokenHash) {
+        const { error } = await supabase.auth.verifyOtp({ token_hash: saved.tokenHash, type: 'invite' });
+        if (!error) sessionOk = true;
+      }
+    }
+
+    // Fallback: maybe there's already an active session
+    if (!sessionOk) {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) sessionOk = true;
+    }
+
+    if (!sessionOk) {
+      setStatus('error');
+      setErrorMsg('Your invite link has expired. Please request a new one below.');
+      return;
+    }
 
     const { error } = await supabase.auth.updateUser({ password });
     if (error) {
@@ -106,7 +124,9 @@ export default function SetPassword() {
       return;
     }
 
-    // Sign out so they log in fresh — cleaner than auto-login from invite token
+    // Token used successfully — clear it
+    clearTokens();
+
     await supabase.auth.signOut();
     setStatus('done');
 
@@ -121,13 +141,13 @@ export default function SetPassword() {
         <div style={styles.logo}>SODMUN</div>
         <div style={styles.bar} />
 
-        {tokenValid === null && (
+        {ready === null && (
           <p style={styles.sub}>Verifying your link…</p>
         )}
 
-        {tokenValid === false && (
+        {ready === false && (
           <>
-            <h1 style={styles.title}>Link expired</h1>
+            <h1 style={styles.title}>Link not found</h1>
             <p style={styles.sub}>{errorMsg}</p>
             <a href="https://app.sodmun.com/forgot" style={styles.link}>
               Request a new link →
@@ -135,7 +155,7 @@ export default function SetPassword() {
           </>
         )}
 
-        {tokenValid === true && status !== 'done' && (
+        {ready === true && status !== 'done' && (
           <>
             <h1 style={styles.title}>Set your password</h1>
             <p style={styles.sub}>Choose a password you'll remember. You'll use this every time you log in.</p>

@@ -4,9 +4,9 @@
 //
 // Token strategy: extract token from URL and persist to localStorage.
 // Do NOT consume (call setSession) until submit.
-// On revisit: only allow if the URL token matches what was previously saved
-// (same link clicked again) — prevents a different person's link from working
-// on a shared device, and prevents blank revisits from auto-passing.
+// If URL contains #error=..., Supabase rejected the token server-side —
+// only allow through if we have a previously saved valid token in localStorage
+// (same link clicked again on same device). Otherwise show expired screen.
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../api';
@@ -44,9 +44,27 @@ export default function SetPassword() {
   useEffect(() => {
     const hash   = window.location.hash;
     const search = window.location.search;
+    const hashParams = new URLSearchParams(hash.replace('#', '?'));
+
+    // ── Case 0: Supabase returned an error in the hash ───────────────────
+    // e.g. #error=access_denied&error_code=otp_expired
+    // The one-time token was already consumed (by a bot/preview) before the
+    // user clicked. Only rescue this if we have a previously saved token
+    // in localStorage from a prior visit on this device.
+    if (hashParams.get('error')) {
+      window.history.replaceState(null, '', window.location.pathname);
+      const saved = loadSaved();
+      if (saved) {
+        // Same device, same link — saved token still valid, let them through
+        setReady(true);
+      } else {
+        setReady(false);
+        setErrorMsg('This invite link has already been used or has expired. Request a new one below.');
+      }
+      return;
+    }
 
     // ── Case 1: fresh URL with hash tokens ───────────────────────────────
-    const hashParams   = new URLSearchParams(hash.replace('#', '?'));
     const accessToken  = hashParams.get('access_token');
     const refreshToken = hashParams.get('refresh_token');
     const type         = hashParams.get('type');
@@ -69,23 +87,15 @@ export default function SetPassword() {
       return;
     }
 
-    // ── Case 3: no token in URL at all ───────────────────────────────────
-    // Only allow if localStorage has a saved token AND the current URL
-    // matches the same invite link (i.e. same token was clicked again).
-    // Since we already cleaned the URL in a prior visit, we can't re-match
-    // the exact token — but the user IS on this page intentionally, meaning
-    // they clicked the link again. The saved token is the only one that could
-    // have put them here. Allow it.
-    //
-    // However: if they navigated here directly (no token ever), localStorage
-    // will be empty and we block them correctly.
+    // ── Case 3: no token in URL — check localStorage ─────────────────────
+    // Only passes if they previously visited this page with a real token
     const saved = loadSaved();
     if (saved) {
       setReady(true);
       return;
     }
 
-    // Nothing — truly no token
+    // Nothing at all
     setReady(false);
     setErrorMsg('No invite token found. Please click the link from your email.');
   }, []);
@@ -150,7 +160,7 @@ export default function SetPassword() {
 
         {ready === false && (
           <>
-            <h1 style={styles.title}>Link not found</h1>
+            <h1 style={styles.title}>Link expired</h1>
             <p style={styles.sub}>{errorMsg}</p>
             <a href="https://app.sodmun.com/forgot" style={styles.link}>
               Request a new link →

@@ -23,7 +23,7 @@ export default function Schedule() {
         </div>
 
         <p style={{ marginTop: '16px', fontSize: '12px', color: 'var(--text-muted)', fontWeight: 500, textAlign: 'center' }}>
-          All times are Dubai Standard Time (GMT+4). Schedule subject to change at Chair's discretion.
+          All times are Dubai Standard Time.
         </p>
       </div>
     </div>

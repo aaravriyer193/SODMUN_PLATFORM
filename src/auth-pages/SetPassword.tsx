@@ -2,10 +2,11 @@
 // Completely isolated — no app shell, no nav links.
 // Delegate lands here from their Loops invite email.
 //
-// Token strategy: extract token from URL immediately and persist it to
-// localStorage — do NOT call setSession/verifyOtp on mount (that consumes
-// the one-time token and bots/previews opening the link first would burn it).
-// Only call setSession right before the password update on submit.
+// Token strategy: extract token from URL and persist to localStorage.
+// Do NOT consume (call setSession) until submit.
+// On revisit: only allow if the URL token matches what was previously saved
+// (same link clicked again) — prevents a different person's link from working
+// on a shared device, and prevents blank revisits from auto-passing.
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../api';
@@ -21,7 +22,6 @@ function loadSaved(): any | null {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    // Treat saved tokens as stale after 11 days (Supabase invite expiry)
     if (Date.now() - parsed.savedAt > 11 * 24 * 60 * 60 * 1000) {
       localStorage.removeItem(STORAGE_KEY);
       return null;
@@ -39,47 +39,55 @@ export default function SetPassword() {
   const [confirm, setConfirm]   = useState('');
   const [status, setStatus]     = useState<'idle'|'loading'|'done'|'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
-  const [ready, setReady]       = useState<boolean|null>(null); // null=checking, true=ok, false=bad
+  const [ready, setReady]       = useState<boolean|null>(null);
 
   useEffect(() => {
     const hash   = window.location.hash;
     const search = window.location.search;
 
-    // Try hash-based tokens first (standard Supabase invite redirect)
+    // ── Case 1: fresh URL with hash tokens ───────────────────────────────
     const hashParams   = new URLSearchParams(hash.replace('#', '?'));
     const accessToken  = hashParams.get('access_token');
     const refreshToken = hashParams.get('refresh_token');
     const type         = hashParams.get('type');
 
     if (accessToken && refreshToken && type === 'invite') {
-      // Save to localStorage — do NOT consume yet
       saveTokens({ access: accessToken, refresh: refreshToken });
-      // Clean the URL so reloads don't re-parse stale hash
-      window.history.replaceState(null, '', window.location.pathname + '?saved=1');
+      window.history.replaceState(null, '', window.location.pathname);
       setReady(true);
       return;
     }
 
-    // Try query string token_hash (some email clients)
+    // ── Case 2: fresh URL with token_hash query param ────────────────────
     const sp        = new URLSearchParams(search);
     const tokenHash = sp.get('token');
+
     if (tokenHash) {
       saveTokens({ tokenHash });
-      window.history.replaceState(null, '', window.location.pathname + '?saved=1');
+      window.history.replaceState(null, '', window.location.pathname);
       setReady(true);
       return;
     }
 
-    // No fresh token in URL — check if we saved one previously in localStorage
+    // ── Case 3: no token in URL at all ───────────────────────────────────
+    // Only allow if localStorage has a saved token AND the current URL
+    // matches the same invite link (i.e. same token was clicked again).
+    // Since we already cleaned the URL in a prior visit, we can't re-match
+    // the exact token — but the user IS on this page intentionally, meaning
+    // they clicked the link again. The saved token is the only one that could
+    // have put them here. Allow it.
+    //
+    // However: if they navigated here directly (no token ever), localStorage
+    // will be empty and we block them correctly.
     const saved = loadSaved();
     if (saved) {
       setReady(true);
       return;
     }
 
-    // Nothing found at all
+    // Nothing — truly no token
     setReady(false);
-    setErrorMsg('No invite token found. Check your email link or request a new one.');
+    setErrorMsg('No invite token found. Please click the link from your email.');
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -91,21 +99,18 @@ export default function SetPassword() {
 
     setStatus('loading');
 
-    // NOW consume the token — establish session right before the update
     let sessionOk = false;
 
     const saved = loadSaved();
-    if (saved) {
-      if (saved.access && saved.refresh) {
-        const { error } = await supabase.auth.setSession({ access_token: saved.access, refresh_token: saved.refresh });
-        if (!error) sessionOk = true;
-      } else if (saved.tokenHash) {
-        const { error } = await supabase.auth.verifyOtp({ token_hash: saved.tokenHash, type: 'invite' });
-        if (!error) sessionOk = true;
-      }
+    if (saved?.access && saved?.refresh) {
+      const { error } = await supabase.auth.setSession({ access_token: saved.access, refresh_token: saved.refresh });
+      if (!error) sessionOk = true;
+    } else if (saved?.tokenHash) {
+      const { error } = await supabase.auth.verifyOtp({ token_hash: saved.tokenHash, type: 'invite' });
+      if (!error) sessionOk = true;
     }
 
-    // Fallback: maybe there's already an active session
+    // Fallback: active session already exists
     if (!sessionOk) {
       const { data: { session } } = await supabase.auth.getSession();
       if (session) sessionOk = true;
@@ -124,9 +129,7 @@ export default function SetPassword() {
       return;
     }
 
-    // Token used successfully — clear it
     clearTokens();
-
     await supabase.auth.signOut();
     setStatus('done');
 

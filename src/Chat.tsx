@@ -10,6 +10,8 @@ const IconSend    = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="
 const IconPlus    = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
 const IconBell    = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>;
 const IconBellOff = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13.73 21a2 2 0 0 1-3.46 0"/><path d="M18.63 13A17.89 17.89 0 0 1 18 8"/><path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14"/><path d="M18 8a6 6 0 0 0-9.33-5"/><line x1="1" y1="1" x2="23" y2="23"/></svg>;
+const IconReply   = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>;
+const IconClose   = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
 
 // ── Notification sound ─────────────────────────────────────────────────────
 let audioCtxRef: AudioContext | null = null;
@@ -84,6 +86,8 @@ export default function Chat() {
     localStorage.getItem('sodmun_notif_sound') !== 'false'
   );
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [replyingTo, setReplyingTo]         = useState<any | null>(null);
+  const [hoveredMsgId, setHoveredMsgId]     = useState<string | null>(null);
 
   const scrollRef       = useRef<HTMLDivElement>(null);
   const activeRoomRef   = useRef(activeRoom);
@@ -91,6 +95,7 @@ export default function Chat() {
   const profileRef      = useRef<any>(null);
   const committeeRef    = useRef<string>('');
   const soundEnabledRef = useRef(true);
+  const inputRef        = useRef<HTMLInputElement>(null);
 
   const hasInitializedRef = useRef(false);
 
@@ -99,14 +104,12 @@ export default function Chat() {
   useEffect(() => { soundEnabledRef.current = soundEnabled; }, [soundEnabled]);
   useEffect(() => { if (authUser?.id) initializeChat(); }, [authUser?.id]);
 
-  // ── Toggle sound ──────────────────────────────────────────────────────────
   const toggleSound = () => {
     const next = !soundEnabled;
     setSoundEnabled(next);
     localStorage.setItem('sodmun_notif_sound', String(next));
   };
 
-  // ── Bootstrap ─────────────────────────────────────────────────────────────
   const initializeChat = async () => {
     const { data: userData } = await supabase.from('users').select('*').eq('id', authUser?.id).single();
     if (!userData) return;
@@ -124,7 +127,6 @@ export default function Chat() {
     await refreshSidebar(userData);
   };
 
-  // ── Sidebar — same logic for everyone, chairs only see their own DMs ──────
   const refreshSidebar = async (userData: any = profile) => {
     if (!userData) return;
     const { data: peers } = await supabase.from('users').select('*').eq('committee', userData.committee);
@@ -142,12 +144,11 @@ export default function Chat() {
     setChannels({ blocs: myBlocs, dms: mappedDMs });
   };
 
-  // ── Fetch messages — same path for everyone ───────────────────────────────
   useEffect(() => { if (activeRoom) fetchMessages(activeRoom); }, [activeRoom]);
 
   const fetchMessages = async (roomId: string) => {
     try {
-      const { data } = await supabase.from('messages').select('*, users(*)')
+      const { data } = await supabase.from('messages').select('*, users(*), reply_to_message:reply_to(id, content, users(role, delegation, committee))')
         .eq('recipient_group', roomId).order('timestamp', { ascending: true });
       if (data) setMessages(data);
       setUnreadCounts(prev => { const m = new Map(prev); m.delete(roomId); return m; });
@@ -155,7 +156,6 @@ export default function Chat() {
     } catch (e) { console.error(e); }
   };
 
-  // ── Shared polling ────────────────────────────────────────────────────────
   const handlePollResults = useCallback((incoming: any[], lockedRoomsList: string[] | null) => {
     if (lockedRoomsList !== null) {
       setLockedRooms(new Set(lockedRoomsList));
@@ -192,12 +192,13 @@ export default function Chat() {
 
   const scrollToBottom = () => setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: 'smooth' }), 80);
 
-  // ── Send ──────────────────────────────────────────────────────────────────
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || !activeRoom || isRoomLocked) return;
     const content = input;
+    const replyToId = replyingTo?.id ?? null;
     setInput('');
+    setReplyingTo(null);
     setIsSending(true);
 
     const tempId = `temp-${Date.now()}`;
@@ -208,12 +209,14 @@ export default function Chat() {
       recipient_group: activeRoom,
       timestamp: new Date().toISOString(),
       users: profile,
+      reply_to: replyToId ? replyingTo : null,
+      reply_to_message: replyingTo ? { id: replyingTo.id, content: replyingTo.content, users: replyingTo.users } : null,
       _sending: true,
     }]);
     scrollToBottom();
 
     try {
-      await supabase.from('messages').insert([{ sender_id: authUser?.id, content, recipient_group: activeRoom }]);
+      await supabase.from('messages').insert([{ sender_id: authUser?.id, content, recipient_group: activeRoom, reply_to: replyToId }]);
       await pollForMessages();
     } finally {
       setIsSending(false);
@@ -244,11 +247,16 @@ export default function Chat() {
     setActiveRoom(id); setActiveRoomName(name); setMessages([]);
     setUnreadCounts(prev => { const m = new Map(prev); m.delete(id); return m; });
     setMobileSidebarOpen(false);
+    setReplyingTo(null);
+  };
+
+  const handleReply = (msg: any) => {
+    setReplyingTo(msg);
+    setTimeout(() => inputRef.current?.focus(), 50);
   };
 
   const isRoomLocked = lockedRooms.has(activeRoom) && !isChair;
 
-  // ── Render messages with date separators ──────────────────────────────────
   const renderMessages = () => {
     const items: React.ReactNode[] = [];
     messages.forEach((m, i) => {
@@ -265,12 +273,48 @@ export default function Chat() {
         );
       }
       const isMe = m.sender_id === authUser?.id;
+      const replied = m.reply_to_message;
+      const msgId = m.id ?? String(i);
+
       items.push(
-        <div key={m.id ?? i} className={`msg-wrap ${isMe ? 'me' : 'them'}`}>
+        <div
+          key={msgId}
+          className={`msg-wrap ${isMe ? 'me' : 'them'}`}
+          onMouseEnter={() => setHoveredMsgId(msgId)}
+          onMouseLeave={() => setHoveredMsgId(null)}
+          style={{ position:'relative' }}
+        >
           <span className="msg-sender">{m.users?.role} · {m.users?.delegation || m.users?.committee}</span>
-          <div className={`msg-bubble ${m._sending ? 'msg-sending' : ''}`}>
-            {m.content}
+
+          {/* Reply preview */}
+          {replied && (
+            <div
+              className={`reply-preview ${isMe ? 'reply-me' : 'reply-them'}`}
+              style={{ cursor:'default' }}
+            >
+              <span className="reply-preview-author">
+                {replied.users?.delegation || replied.users?.role || 'Unknown'}
+              </span>
+              <span className="reply-preview-text">{replied.content}</span>
+            </div>
+          )}
+
+          <div style={{ display:'flex', alignItems:'flex-end', gap:6, flexDirection: isMe ? 'row-reverse' : 'row' }}>
+            <div className={`msg-bubble ${m._sending ? 'msg-sending' : ''}`}>
+              {m.content}
+            </div>
+            {/* Reply button — shows on hover */}
+            {!m._sending && hoveredMsgId === msgId && (
+              <button
+                className="reply-btn"
+                onClick={() => handleReply(m)}
+                title="Reply"
+              >
+                <IconReply />
+              </button>
+            )}
           </div>
+
           <span style={{ fontSize:10, color:'var(--text-muted)', fontWeight:500, marginTop:3, alignSelf: isMe ? 'flex-end' : 'flex-start', display:'flex', alignItems:'center', gap:4 }}>
             {m._sending ? (
               <span className="sending-dots"><span/><span/><span/></span>
@@ -316,6 +360,26 @@ export default function Chat() {
         .sec-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:2px; color:var(--text-muted); }
         .lock-banner { display:flex; align-items:center; gap:8px; background:rgba(220,38,38,0.07); border-bottom:1px solid rgba(220,38,38,0.18); padding:10px 20px; font-size:12px; font-weight:700; color:#DC2626; flex-shrink:0; }
         .lock-chip { font-size:9px; font-weight:700; background:rgba(220,38,38,0.10); color:#DC2626; padding:1px 6px; border-radius:99px; flex-shrink:0; }
+
+        /* ── Reply styles ── */
+        .reply-preview { border-left:3px solid var(--accent); border-radius:8px; padding:6px 10px; margin-bottom:4px; max-width:100%; overflow:hidden; }
+        .reply-me { background:rgba(240,124,0,0.15); }
+        .reply-them { background:var(--bg-surface); border-color:var(--text-muted); }
+        .reply-preview-author { display:block; font-size:10px; font-weight:800; color:var(--accent); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .reply-them .reply-preview-author { color:var(--text-secondary); }
+        .reply-preview-text { display:block; font-size:12px; color:var(--text-secondary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:500; }
+        .reply-btn { background:var(--bg-elevated); border:1px solid var(--border); border-radius:8px; width:28px; height:28px; display:flex; align-items:center; justify-content:center; cursor:pointer; color:var(--text-muted); flex-shrink:0; transition:all 0.12s; opacity:0; animation:replyBtnShow 0.1s ease forwards; }
+        .reply-btn:hover { background:var(--accent-soft); color:var(--accent); border-color:var(--accent-mid); }
+        @keyframes replyBtnShow { to { opacity:1; } }
+
+        /* ── Reply-to bar above input ── */
+        .reply-bar { display:flex; align-items:center; gap:10px; padding:8px 18px; background:var(--bg-surface); border-top:1px solid var(--border); font-size:12px; flex-shrink:0; }
+        .reply-bar-inner { flex:1; min-width:0; border-left:3px solid var(--accent); padding-left:8px; }
+        .reply-bar-author { font-weight:800; font-size:11px; color:var(--accent); text-transform:uppercase; letter-spacing:0.5px; }
+        .reply-bar-text { color:var(--text-secondary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:500; }
+        .reply-bar-close { background:transparent; border:none; cursor:pointer; color:var(--text-muted); display:flex; align-items:center; padding:4px; border-radius:6px; flex-shrink:0; }
+        .reply-bar-close:hover { color:var(--text-primary); background:var(--bg-elevated); }
+
         ::-webkit-scrollbar { width:4px; } ::-webkit-scrollbar-track { background:transparent; } ::-webkit-scrollbar-thumb { background:rgba(128,128,128,0.25); border-radius:99px; }
         @media (max-width:768px) {
           .chat-sidebar-inner { display:none; }
@@ -324,6 +388,7 @@ export default function Chat() {
           .chat-page-wrap .chat-shell { border-radius:12px; }
           .chat-main-inner form { padding-bottom: calc(env(safe-area-inset-bottom) + 70px) !important; }
           .chat-page-header { display:none; }
+          .msg-wrap { max-width:88%; }
         }
         .mobile-drawer-backdrop { display:none; }
         .mobile-drawer { display:none; }
@@ -416,7 +481,6 @@ export default function Chat() {
           <div style={{ padding:'14px 20px', borderBottom:'1px solid var(--border)', background:'var(--bg-elevated)', backdropFilter:'blur(8px)', flexShrink:0, display:'flex', alignItems:'center', gap:10 }}>
             <button className="mobile-channel-btn" onClick={e => { e.stopPropagation(); setMobileSidebarOpen(true); }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-              {/* unread badge on the burger */}
               {Array.from(unreadCounts.values()).reduce((a, b) => a + b, 0) > 0 && (
                 <span style={{ minWidth:16, height:16, borderRadius:99, background:'var(--accent)', color:'#fff', fontSize:9, fontWeight:800, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 4px' }}>
                   {Array.from(unreadCounts.values()).reduce((a, b) => a + b, 0)}
@@ -443,9 +507,22 @@ export default function Chat() {
             <div ref={scrollRef} />
           </div>
 
+          {/* Reply bar */}
+          {replyingTo && (
+            <div className="reply-bar">
+              <div style={{ color:'var(--accent)', flexShrink:0 }}><IconReply /></div>
+              <div className="reply-bar-inner">
+                <span className="reply-bar-author">{replyingTo.users?.delegation || replyingTo.users?.role}</span>
+                <span className="reply-bar-text">{replyingTo.content}</span>
+              </div>
+              <button className="reply-bar-close" onClick={() => setReplyingTo(null)}><IconClose /></button>
+            </div>
+          )}
+
           {/* Input */}
           <form onSubmit={sendMessage} style={{ padding:'14px 18px', borderTop:'1px solid var(--border)', background:'var(--bg-elevated)', display:'flex', gap:'10px', alignItems:'center', flexShrink:0 }}>
             <input
+              ref={inputRef}
               style={{ flex:1, background:'var(--bg-input)', border:'1px solid var(--border-strong)', color:'var(--text-primary)', padding:'12px 16px', borderRadius:'12px', fontSize:'14px', fontFamily:'Manrope,sans-serif', outline:'none', transition:'border-color 0.15s', marginBottom:0, opacity: isRoomLocked ? 0.5 : 1 }}
               value={input} onChange={e => setInput(e.target.value)}
               placeholder={isRoomLocked ? 'Chat paused by Chair…' : `Message ${activeRoomName}…`}
@@ -465,7 +542,6 @@ export default function Chat() {
         <>
           <div className="mobile-drawer-backdrop" onClick={() => setMobileSidebarOpen(false)} />
           <div className="mobile-drawer" onClick={e => e.stopPropagation()}>
-            {/* Drawer header */}
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20 }}>
               <span style={{ fontSize:13, fontWeight:800, color:'var(--text-primary)' }}>Channels</span>
               <button onClick={() => setMobileSidebarOpen(false)} style={{ background:'transparent', border:'none', cursor:'pointer', color:'var(--text-muted)', padding:4, display:'flex' }}>
@@ -473,7 +549,6 @@ export default function Chat() {
               </button>
             </div>
 
-            {/* Global */}
             <div className="sec-label" style={{ marginBottom:8 }}>Public</div>
             <div className={`ch-btn ${activeRoom === profile?.committee ? 'active' : 'inactive'}`} onClick={() => switchRoom(profile?.committee, 'Global Committee')}>
               <span style={{ opacity:0.7 }}><IconGlobe /></span>
@@ -484,7 +559,6 @@ export default function Chat() {
               )}
             </div>
 
-            {/* Blocs */}
             <div className="sec-header" style={{ marginTop:20 }}>
               <span className="sec-label">Bloc Group Chats</span>
               {!isChair && <button className="plus-btn-sm" onClick={() => { setMobileSidebarOpen(false); setIsBlocModal(true); }}><IconPlus /></button>}
@@ -501,7 +575,6 @@ export default function Chat() {
               </div>
             ))}
 
-            {/* DMs */}
             <div className="sec-header" style={{ marginTop:20 }}>
               <span className="sec-label">Direct Messages</span>
               <button className="plus-btn-sm" onClick={() => { setMobileSidebarOpen(false); setIsDMModal(true); }}><IconPlus /></button>
@@ -517,7 +590,6 @@ export default function Chat() {
               </div>
             ))}
 
-            {/* Drawer footer */}
             <div style={{ marginTop:'auto', paddingTop:20, borderTop:'1px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
               <div>
                 <p style={{ fontSize:11, fontWeight:700, color:'var(--accent)', textTransform:'uppercase', letterSpacing:'1px' }}>{profile?.committee}</p>
@@ -525,7 +597,6 @@ export default function Chat() {
               </div>
               <button
                 onClick={toggleSound}
-                title={soundEnabled ? 'Mute notifications' : 'Enable notification sounds'}
                 style={{ background:'var(--bg-elevated)', border:'1px solid var(--border)', borderRadius:9, width:36, height:36, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color: soundEnabled ? 'var(--accent)' : 'var(--text-muted)', flexShrink:0 }}
               >
                 {soundEnabled ? <IconBell /> : <IconBellOff />}

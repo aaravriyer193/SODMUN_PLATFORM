@@ -511,7 +511,7 @@ export default function Chat() {
           {replyingTo && (
             <div className="reply-bar">
               <div style={{ color:'var(--accent)', flexShrink:0 }}><IconReply /></div>
-              <div className="reply-bar-inner">
+              <div className="reply-bar-inner" style={{ gap:4, display:'flex', flexDirection:'column' }}>
                 <span className="reply-bar-author">{replyingTo.users?.delegation || replyingTo.users?.role}</span>
                 <span className="reply-bar-text">{replyingTo.content}</span>
               </div>

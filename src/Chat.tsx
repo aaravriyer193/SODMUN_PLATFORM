@@ -375,7 +375,7 @@ export default function Chat() {
         /* ── Reply-to bar above input ── */
         .reply-bar { display:flex; align-items:center; gap:10px; padding:8px 18px; background:var(--bg-surface); border-top:1px solid var(--border); font-size:12px; flex-shrink:0; }
         .reply-bar-inner { flex:1; min-width:0; border-left:3px solid var(--accent); padding-left:8px; }
-        .reply-bar-author { font-weight:800; font-size:11px; color:var(--accent); text-transform:uppercase; letter-spacing:0.5px; }
+        .reply-bar-author { font-weight:800; font-size:11px; color:var(--accent); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:2px; }
         .reply-bar-text { color:var(--text-secondary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:500; }
         .reply-bar-close { background:transparent; border:none; cursor:pointer; color:var(--text-muted); display:flex; align-items:center; padding:4px; border-radius:6px; flex-shrink:0; }
         .reply-bar-close:hover { color:var(--text-primary); background:var(--bg-elevated); }

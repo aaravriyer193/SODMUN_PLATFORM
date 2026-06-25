@@ -486,7 +486,7 @@ export default function Chat() {
         <div className="chat-main-inner">
           {/* Header */}
           <div style={{ padding:'14px 20px', borderBottom:'1px solid var(--border)', background:'var(--bg-elevated)', backdropFilter:'blur(8px)', flexShrink:0, display:'flex', alignItems:'center', gap:10 }}>
-            <button className="mobile-channel-btn" onClick={e => { e.stopPropagation(); setMobileSidebarOpen(true); }}>
+            <button className="mobile-channel-btn" onPointerDown={e => { e.stopPropagation(); e.preventDefault(); setMobileSidebarOpen(true); }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
               {Array.from(unreadCounts.values()).reduce((a, b) => a + b, 0) > 0 && (
                 <span style={{ minWidth:16, height:16, borderRadius:99, background:'var(--accent)', color:'#fff', fontSize:9, fontWeight:800, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 4px' }}>
@@ -547,8 +547,8 @@ export default function Chat() {
       {/* ── Mobile channel drawer ── */}
       {mobileSidebarOpen && (
         <>
-          <div className="mobile-drawer-backdrop" onClick={() => setMobileSidebarOpen(false)} />
-          <div className="mobile-drawer" onClick={e => e.stopPropagation()}>
+          <div className="mobile-drawer-backdrop" onPointerDown={() => setMobileSidebarOpen(false)} />
+          <div className="mobile-drawer" onPointerDown={e => e.stopPropagation()}>
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20 }}>
               <span style={{ fontSize:13, fontWeight:800, color:'var(--text-primary)' }}>Channels</span>
               <button onClick={() => setMobileSidebarOpen(false)} style={{ background:'transparent', border:'none', cursor:'pointer', color:'var(--text-muted)', padding:4, display:'flex' }}>

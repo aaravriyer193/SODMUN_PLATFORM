@@ -378,7 +378,7 @@ const AppShell = () => {
 
         const isGlobal = msg.recipient_group === p?.committee;
         const isDM     = msg.recipient_group?.startsWith('dm_') && msg.recipient_group?.includes(user.id);
-        const isBloc   = msg.recipient_group?.startsWith('bloc_');
+        const isBloc   = msg.recipient_group?.startsWith('bloc_') && sender?.committee === p?.committee;
 
         if (!isGlobal && !isDM && !isBloc) return;
 

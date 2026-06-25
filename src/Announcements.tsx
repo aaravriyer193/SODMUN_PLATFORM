@@ -230,7 +230,7 @@ function PollCard({ poll, authUserId, isAdmin, onChanged }: { poll: any; authUse
           <div style={{ flex:1, minWidth:0 }}>
             <p style={{ fontSize:15, fontWeight:700, color:'var(--text-primary)', margin:0, lineHeight:1.4 }}>{poll.question}</p>
             <p style={{ fontSize:11, color:'var(--text-muted)', fontWeight:500, marginTop:4 }}>
-              {totalVoters} {totalVoters === 1 ? 'vote' : 'votes'} · {poll.closed ? 'Closed' : (poll.multi_select ? 'Choose any' : 'Choose one')}
+              {isAdmin && `${totalVoters} ${totalVoters === 1 ? 'vote' : 'votes'} · `}{poll.closed ? 'Closed' : (poll.multi_select ? 'Choose any' : 'Choose one')}
             </p>
           </div>
         </div>
@@ -267,17 +267,17 @@ function PollCard({ poll, authUserId, isAdmin, onChanged }: { poll: any; authUse
                 overflow:'hidden', fontFamily:'Manrope,sans-serif',
               }}
             >
-              {/* Fill bar */}
-              <div style={{
+              {/* Fill bar — admin only */}
+              {isAdmin && <div style={{
                 position:'absolute', inset:0, width:`${pct}%`,
                 background: selected ? 'var(--accent-soft)' : 'var(--bg-elevated)',
                 transition:'width 0.3s ease', zIndex:0,
-              }} />
+              }} />}
               <div style={{ position:'relative', zIndex:1, display:'flex', alignItems:'center', justifyContent:'space-between', gap:10 }}>
                 <span style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, fontWeight:600, color: selected ? 'var(--accent)' : 'var(--text-primary)' }}>
                   {selected && <IconCheck />} {opt.label}
                 </span>
-                <span style={{ fontSize:12, fontWeight:700, color:'var(--text-muted)', flexShrink:0 }}>{pct}% · {count}</span>
+                {isAdmin && <span style={{ fontSize:12, fontWeight:700, color:'var(--text-muted)', flexShrink:0 }}>{pct}% · {count}</span>}
               </div>
             </button>
           );

@@ -131,8 +131,14 @@ export default function Chat() {
     if (!userData) return;
     const { data: peers } = await supabase.from('users').select('*').eq('committee', userData.committee);
     if (peers) setCommitteeUsers(peers);
-    const { data: memberOf } = await supabase.from('bloc_members').select('blocs(*)').eq('user_id', authUser?.id);
-    const myBlocs = (memberOf?.map((b: any) => b.blocs) ?? []).filter((b: any) => b && b.committee === userData.committee);
+    let myBlocs: any[] = [];
+    if (userData.role !== 'Delegate') {
+      const { data: allBlocs } = await supabase.from('blocs').select('*').eq('committee', userData.committee);
+      myBlocs = allBlocs || [];
+    } else {
+      const { data: memberOf } = await supabase.from('bloc_members').select('blocs(*)').eq('user_id', authUser?.id);
+      myBlocs = (memberOf?.map((b: any) => b.blocs) ?? []).filter((b: any) => b && b.committee === userData.committee);
+    }
     const { data: myDMs } = await supabase.from('messages').select('recipient_group')
       .ilike('recipient_group', `%${authUser?.id}%`).filter('recipient_group', 'ilike', 'dm_%');
     const uniqueDMs = Array.from(new Set((myDMs || []).map((m: any) => m.recipient_group)));

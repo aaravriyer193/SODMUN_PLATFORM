@@ -23,11 +23,12 @@ const IconHistory   = () => <svg width="14" height="14" viewBox="0 0 24 24" fill
 const IconCheck     = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>;
 const IconX         = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
 const IconAmend     = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
+const IconUpload    = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>;
+const IconPaperclip = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>;
+const IconTrash     = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>;
+const IconDownload  = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>;
 
 // ── Time ago helper ───────────────────────────────────────────────────────────
-// Same UTC-parsing fix as Chat.tsx/Announcements.tsx — see those files for
-// full explanation. PostgREST can omit the 'Z' suffix on timestamptz
-// values, causing JS to misparse UTC timestamps as local time.
 function toUTC(ts: string): Date {
   const hasTz = /Z$|[+-]\d{2}:\d{2}$/.test(ts);
   return new Date(hasTz ? ts : ts + 'Z');
@@ -40,6 +41,19 @@ function timeAgo(ts: string) {
   if (s < 3600) return `${Math.floor(s/60)}m ago`;
   if (s < 86400) return `${Math.floor(s/3600)}h ago`;
   return d.toLocaleDateString('en-US', { timeZone: 'Asia/Dubai' });
+}
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function fileIcon(mime: string) {
+  if (mime === 'application/pdf') return '📄';
+  if (mime.includes('word')) return '📝';
+  if (mime.startsWith('image/')) return '🖼️';
+  return '📎';
 }
 
 // ── Delegate color palette for cursors ───────────────────────────────────────
@@ -84,7 +98,6 @@ const EditableBlock = ({ block, index, commitBlocks, blocks, handleKeyDown, getP
   };
 
   const handleMouseUp = () => {
-    // Suppress format toolbar when amendments mode is active or doc not editable
     if (!canEdit || amendmentsOpen) { setToolbarPos(null); return; }
     const sel = window.getSelection();
     if (sel && !sel.isCollapsed && editorRef.current?.contains(sel.anchorNode)) {
@@ -116,8 +129,6 @@ const EditableBlock = ({ block, index, commitBlocks, blocks, handleKeyDown, getP
   const fontSize   = block.type === 'heading' ? '22px' : '15px';
   const fontWeight = block.type === 'heading' ? '800' : '400';
   const fontColor  = block.type === 'heading' ? 'var(--accent)' : 'var(--text-primary)';
-
-  // Presence cursors in this block
   const blockPresences = (presences || []).filter((p: any) => p.blockId === block.id);
 
   return (
@@ -125,7 +136,6 @@ const EditableBlock = ({ block, index, commitBlocks, blocks, handleKeyDown, getP
       onClick={() => editorRef.current?.focus()}
     >
       <FloatingToolbar position={toolbarPos} onAction={handleFormatAction} />
-
       {block.type === 'point' && (
         <div style={{ width:36, paddingTop:3, color:'var(--accent)', fontWeight:800, fontSize:14, flexShrink:0, textAlign:'right', paddingRight:12, userSelect:'none', fontFamily:'Manrope,sans-serif' }}>
           {getPrefix(index)}
@@ -136,7 +146,6 @@ const EditableBlock = ({ block, index, commitBlocks, blocks, handleKeyDown, getP
           <div style={{ width:4, height:20, background:'var(--accent)', borderRadius:2, opacity:0.6 }} />
         </div>
       )}
-
       <div ref={editorRef} contentEditable={canEdit} suppressContentEditableWarning
         className={amendmentsOpen ? 'amend-select-mode' : ''}
         style={{ flex:1, minHeight:'1.6em', padding:'3px 0', fontFamily:'Manrope,sans-serif', fontSize, fontWeight, color:fontColor, lineHeight:block.type==='heading'?1.3:1.7, outline:'none', wordBreak:'break-word', overflowWrap:'break-word', whiteSpace:'pre-wrap', marginBottom:block.type==='heading'?'16px':'0px', letterSpacing:block.type==='heading'?'-0.5px':'0px', textTransform:block.type==='heading'?'uppercase':'none', maxWidth:'100%', boxSizing:'border-box', cursor:canEdit?'text':'default' }}
@@ -144,36 +153,10 @@ const EditableBlock = ({ block, index, commitBlocks, blocks, handleKeyDown, getP
         data-placeholder={block.type==='heading'?'Resolution heading…':block.type==='point'?'Clause…':'Write here…'}
         onInput={handleInput} onMouseUp={handleMouseUp} onKeyDown={handleLocalKeyDown}
       />
-
-      {/* Live text cursors — Google Docs style blinking caret, no mouse pointer */}
       {blockPresences.map((p: any) => (
-        <div
-          key={p.userId}
-          title={p.delegation}
-          style={{
-            position: 'absolute', right: 0, top: 2,
-            display: 'flex', alignItems: 'stretch', gap: 4,
-            pointerEvents: 'none', zIndex: 10,
-            transition: 'opacity 0.2s ease',
-          }}
-        >
-          {/* Blinking text caret — thin vertical bar, like a real cursor */}
-          <div style={{
-            width: 2, alignSelf: 'stretch', minHeight: 18,
-            background: userColor(p.userId),
-            borderRadius: 1,
-            animation: 'caretBlink 1s step-end infinite',
-          }} />
-          {/* Name tag */}
-          <span style={{
-            fontSize: 10, fontWeight: 700, color: '#fff',
-            background: userColor(p.userId),
-            borderRadius: 4, padding: '2px 6px', whiteSpace: 'nowrap',
-            boxShadow: '0 1px 4px rgba(0,0,0,0.20)',
-            alignSelf: 'flex-start',
-          }}>
-            {p.delegation}
-          </span>
+        <div key={p.userId} title={p.delegation} style={{ position:'absolute', right:0, top:2, display:'flex', alignItems:'stretch', gap:4, pointerEvents:'none', zIndex:10, transition:'opacity 0.2s ease' }}>
+          <div style={{ width:2, alignSelf:'stretch', minHeight:18, background:userColor(p.userId), borderRadius:1, animation:'caretBlink 1s step-end infinite' }} />
+          <span style={{ fontSize:10, fontWeight:700, color:'#fff', background:userColor(p.userId), borderRadius:4, padding:'2px 6px', whiteSpace:'nowrap', boxShadow:'0 1px 4px rgba(0,0,0,0.20)', alignSelf:'flex-start' }}>{p.delegation}</span>
         </div>
       ))}
     </div>
@@ -183,6 +166,139 @@ const EditableBlock = ({ block, index, commitBlocks, blocks, handleKeyDown, getP
 // ── Amendment overlay types ───────────────────────────────────────────────────
 type AmendType = 'add' | 'modify' | 'strike';
 type AmendMode = null | AmendType;
+
+// ── Attachments panel ─────────────────────────────────────────────────────────
+const AttachmentsPanel = ({ resolutionId, canUpload, currentUserId }: { resolutionId: number; canUpload: boolean; currentUserId: string }) => {
+  const [attachments, setAttachments] = useState<any[]>([]);
+  const [uploading, setUploading]     = useState(false);
+  const [deleting, setDeleting]       = useState<number | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const load = useCallback(async () => {
+    const { data } = await supabase
+      .from('resolution_attachments')
+      .select('*, users(role, delegation)')
+      .eq('resolution_id', resolutionId)
+      .order('uploaded_at', { ascending: false });
+    if (data) setAttachments(data);
+  }, [resolutionId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) { alert('File must be under 10MB.'); return; }
+
+    setUploading(true);
+    try {
+      const path = `${resolutionId}/${Date.now()}_${file.name}`;
+      const { error: uploadError } = await supabase.storage
+        .from('resolution-attachments')
+        .upload(path, file, { contentType: file.type });
+      if (uploadError) throw uploadError;
+
+      const { error: dbError } = await supabase
+        .from('resolution_attachments')
+        .insert([{ resolution_id: resolutionId, name: file.name, path, size: file.size, mime_type: file.type, uploaded_by: currentUserId }]);
+      if (dbError) throw dbError;
+
+      await load();
+    } catch (err: any) {
+      alert(`Upload failed: ${err.message}`);
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleView = async (att: any) => {
+    const { data } = await supabase.storage
+      .from('resolution-attachments')
+      .createSignedUrl(att.path, 300); // 5 min signed URL
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank');
+  };
+
+  const handleDelete = async (att: any) => {
+    if (!window.confirm(`Remove "${att.name}"? This cannot be undone.`)) return;
+    setDeleting(att.id);
+    try {
+      await supabase.storage.from('resolution-attachments').remove([att.path]);
+      await supabase.from('resolution_attachments').delete().eq('id', att.id);
+      await load();
+    } catch (err: any) {
+      alert(`Delete failed: ${err.message}`);
+    } finally {
+      setDeleting(null);
+    }
+  };
+
+  return (
+    <div style={{ borderTop:'1px solid var(--border)', padding:'16px 20px' }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:7 }}>
+          <IconPaperclip />
+          <span style={{ fontSize:12, fontWeight:800, color:'var(--text-primary)' }}>Attachments</span>
+          {attachments.length > 0 && (
+            <span style={{ fontSize:10, fontWeight:700, padding:'1px 6px', borderRadius:99, background:'var(--accent-soft)', color:'var(--accent)' }}>{attachments.length}</span>
+          )}
+        </div>
+        {canUpload && (
+          <>
+            <input ref={fileInputRef} type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" onChange={handleUpload} style={{ display:'none' }} />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              style={{ display:'flex', alignItems:'center', gap:6, fontSize:11, fontWeight:700, padding:'5px 12px', borderRadius:8, border:'1px solid var(--accent-mid)', background:'var(--accent-soft)', color:'var(--accent)', cursor: uploading ? 'not-allowed' : 'pointer', fontFamily:'Manrope,sans-serif', opacity: uploading ? 0.6 : 1 }}
+            >
+              <IconUpload /> {uploading ? 'Uploading…' : 'Upload'}
+            </button>
+          </>
+        )}
+      </div>
+
+      {attachments.length === 0 && (
+        <p style={{ fontSize:12, color:'var(--text-muted)', fontWeight:500 }}>No attachments yet{canUpload ? ' — upload a PDF, Word doc, or image.' : '.'}</p>
+      )}
+
+      <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+        {attachments.map(att => (
+          <div key={att.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 12px', background:'var(--bg-surface)', border:'1px solid var(--border)', borderRadius:10, transition:'background 0.1s' }}
+            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background='var(--bg-elevated)'}
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background='var(--bg-surface)'}
+          >
+            <span style={{ fontSize:18, flexShrink:0 }}>{fileIcon(att.mime_type)}</span>
+            <div style={{ flex:1, minWidth:0 }}>
+              <p style={{ fontSize:13, fontWeight:600, color:'var(--text-primary)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{att.name}</p>
+              <p style={{ fontSize:10, color:'var(--text-muted)', marginTop:1 }}>
+                {formatBytes(att.size)} · {att.users?.delegation || att.users?.role || 'Unknown'} · {timeAgo(att.uploaded_at)}
+              </p>
+            </div>
+            <div style={{ display:'flex', gap:4, flexShrink:0 }}>
+              <button
+                onClick={() => handleView(att)}
+                title="View / Download"
+                style={{ width:28, height:28, borderRadius:7, border:'1px solid var(--border)', background:'transparent', color:'var(--text-muted)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.1s' }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background='var(--accent-soft)'; (e.currentTarget as HTMLElement).style.color='var(--accent)'; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background='transparent'; (e.currentTarget as HTMLElement).style.color='var(--text-muted)'; }}
+              ><IconDownload /></button>
+              {(att.uploaded_by === currentUserId) && (
+                <button
+                  onClick={() => handleDelete(att)}
+                  disabled={deleting === att.id}
+                  title="Remove"
+                  style={{ width:28, height:28, borderRadius:7, border:'1px solid var(--border)', background:'transparent', color:'var(--text-muted)', cursor: deleting === att.id ? 'not-allowed' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.1s', opacity: deleting === att.id ? 0.4 : 1 }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background='rgba(220,38,38,0.08)'; (e.currentTarget as HTMLElement).style.color='#DC2626'; (e.currentTarget as HTMLElement).style.borderColor='rgba(220,38,38,0.25)'; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background='transparent'; (e.currentTarget as HTMLElement).style.color='var(--text-muted)'; (e.currentTarget as HTMLElement).style.borderColor='var(--border)'; }}
+                ><IconTrash /></button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 export default function Resolutions() {
@@ -198,6 +314,7 @@ export default function Resolutions() {
   const [selectedBlocId, setSelectedBlocId] = useState('');
   const [presentationMode, setPresentationMode] = useState(false);
   const [blocFilter, setBlocFilter]     = useState('all');
+  const [showAttachments, setShowAttachments] = useState(false);
 
   // Version history
   const [showHistory, setShowHistory]   = useState(false);
@@ -211,7 +328,6 @@ export default function Resolutions() {
   const [amendMode, setAmendMode]       = useState<AmendMode>(null);
   const [amendDraft, setAmendDraft]     = useState({ blockId:'', charStart:0, charEnd:0, originalText:'', proposedText:'' });
   const [amendInput, setAmendInput]     = useState('');
-  // Floating selection toolbar
   const [selectionToolbar, setSelectionToolbar] = useState<{ x:number; y:number } | null>(null);
   const [selectionData, setSelectionData] = useState<{ blockId:string; charStart:number; charEnd:number; text:string } | null>(null);
   const [amendPopup, setAmendPopup]     = useState<{ x:number; y:number; type:AmendType } | null>(null);
@@ -219,7 +335,6 @@ export default function Resolutions() {
 
   // Presence (cursors)
   const [presences, setPresences]       = useState<any[]>([]);
-  // presenceChannelRef removed — no WebSocket, no presence channel
   const profileRef      = useRef<any>(null);
   const myBlocsRef       = useRef<any[]>([]);
 
@@ -232,8 +347,6 @@ export default function Resolutions() {
   const lastKnownBlocks = useRef<Map<string, any>>(new Map());
   const pendingSaveIds  = useRef<Set<string>>(new Set());
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // wsBlockedRef and connectionMode removed — no WebSocket exists anymore,
-  // polling is the only sync path, unconditionally
 
   const isChair = profile?.role !== 'Delegate' && profile?.role !== null;
 
@@ -243,7 +356,6 @@ export default function Resolutions() {
   useEffect(() => { activeResRef.current = activeRes; }, [activeRes]);
   useEffect(() => { if (authUser) fetchCoreData(); }, [authUser]);
 
-  // ── Unload save ──────────────────────────────────────────────────────────────
   useEffect(() => {
     const onUnload = () => {
       if (activeResRef.current && pendingBlocks.current.length > 0)
@@ -253,20 +365,8 @@ export default function Resolutions() {
     return () => { window.removeEventListener('beforeunload', onUnload); onUnload(); };
   }, []);
 
-  // ── Single merged realtime channel for ALL resolution activity ──────────────
-  // ── Realtime fully removed for Resolutions ───────────────────────────────────
-  // The 2s/6s adaptive poll below is the sole sync mechanism now. In practice
-  // it feels realtime (2s is imperceptible as a delay), and removing the
-  // WebSocket eliminates an observed issue where connection attempts could
-  // spike to ~20 simultaneous connections under certain conditions, plus
-  // removes any standing connection-count cost entirely for this page.
-  // Resolution list updates, block content, and amendments are all already
-  // covered by polling (see below + getResolutions list refresh). Presence/
-  // cursors rode the same channel and are not replaced — trackCursorBlock
-  // is now a no-op.
   const trackCursorBlock = (_blockId: string) => {};
 
-  // ── Fetch core data ───────────────────────────────────────────────────────────
   const restoreLastResolution = (resList: any[]) => {
     try {
       const lastId = localStorage.getItem('sodmun_last_reso_id');
@@ -280,157 +380,76 @@ export default function Resolutions() {
     const { data: userData } = await supabase.from('users').select('*').eq('id', authUser?.id).single();
     if (!userData) return;
     setProfile(userData);
-
-    // All blocs in committee (for the "Create resolution" dropdown)
     const { data: allBlocs } = await supabase.from('blocs').select('*').eq('committee', userData.committee);
-
     if (userData.role !== 'Delegate') {
-      // ── Chair: service role via Edge Function, sees everything ───────────
       setMyBlocs(allBlocs || []);
       try {
-        const result = await getResolutions(); // no bloc_ids = chair mode
+        const result = await getResolutions();
         setResolutions(result.resolutions || []);
         restoreLastResolution(result.resolutions || []);
-      } catch (e) {
-        console.error('Chair resolution fetch failed:', e);
-      }
+      } catch (e) { console.error('Chair resolution fetch failed:', e); }
     } else {
-      // ── Delegate: get their bloc IDs first, then fetch via Edge Function ──
-      const { data: memberOf } = await supabase
-        .from('bloc_members')
-        .select('bloc_id')
-        .eq('user_id', authUser?.id);
+      const { data: memberOf } = await supabase.from('bloc_members').select('bloc_id').eq('user_id', authUser?.id);
       const myIds = (memberOf || []).map((b: any) => b.bloc_id);
       setMyBlocs(allBlocs?.filter((b: any) => myIds.includes(b.id)) || []);
-
       if (myIds.length > 0) {
         try {
-          const result = await getResolutions(myIds); // delegate mode — pass bloc IDs
+          const result = await getResolutions(myIds);
           setResolutions(result.resolutions || []);
           restoreLastResolution(result.resolutions || []);
-        } catch (e) {
-          console.error('Delegate resolution fetch failed:', e);
-        }
-      } else {
-        setResolutions([]);
-      }
+        } catch (e) { console.error('Delegate resolution fetch failed:', e); }
+      } else { setResolutions([]); }
     }
   };
 
-  // ── Open / create resolution ──────────────────────────────────────────────────
-  // ── Polling fallback — guarantees updates land even if realtime stalls ───────
-  // Supabase's postgres_changes can silently drop events under load or after
-  // a brief idle gap, even with a stable channel subscription. This polls the
-  // blocks table while a resolution is open and merges in anything that
-  // differs from local state — a safety net underneath realtime, not a
-  // replacement for it (realtime still gives the instant feel when it works).
-  //
-  // Adaptive backoff: a resolution being actively co-edited polls every 2s
-  // (the cadence proven to feel realtime). After several consecutive polls
-  // with no change — meaning no one is actively typing, locally or
-  // remotely — it stretches to 6s instead, cutting sustained load roughly
-  // 3x during the long quiet stretches that make up most of a document's
-  // open-but-idle time, while snapping straight back to 2s the moment any
-  // edit (yours or theirs) is detected.
   const POLL_FAST_MS = 2000;
   const POLL_SLOW_MS = 6000;
-  const EMPTY_POLLS_BEFORE_SLOW = 4; // ~8s of no changes before backing off
+  const EMPTY_POLLS_BEFORE_SLOW = 4;
   const consecutiveUnchangedPolls = useRef(0);
 
   useEffect(() => {
-    if (!activeRes?.id) {
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-      return;
-    }
-
+    if (!activeRes?.id) { if (pollIntervalRef.current) clearInterval(pollIntervalRef.current); return; }
     let cancelled = false;
     consecutiveUnchangedPolls.current = 0;
-
     const poll = async () => {
       if (cancelled) return;
       let sawChange = false;
       try {
         const result = await getBlocks(activeRes.id);
         const rows: any[] = result.blocks || [];
-        if (rows.length === 0) {
-          scheduleNext();
-          return;
-        }
-
+        if (rows.length === 0) { scheduleNext(); return; }
         const sorted = rows.sort((a, b) => a.position - b.position);
         const remoteIds = new Set(sorted.map(r => r.id));
-
         setBlocks(prev => {
-          // Don't clobber whatever block currently has focus (mid-keystroke)
-          const focusedId = (document.activeElement as HTMLElement)?.closest?.('[data-block-id]')
-            ?.getAttribute('data-block-id');
-
+          const focusedId = (document.activeElement as HTMLElement)?.closest?.('[data-block-id]')?.getAttribute('data-block-id');
           let changed = false;
           const merged = sorted.map(r => {
-            // Skip any block with an unconfirmed local save in flight — this
-            // is the actual fix for the "edit disappears then reappears"
-            // flicker. The focused-block check alone wasn't enough because
-            // the debounced save (400ms) can still be pending on a block
-            // you've already moved away from when the poll fires.
-            if (r.id === focusedId || pendingSaveIds.current.has(r.id)) {
-              const local = prev.find(b => b.id === r.id);
-              if (local) return local;
-            }
+            if (r.id === focusedId || pendingSaveIds.current.has(r.id)) { const local = prev.find(b => b.id === r.id); if (local) return local; }
             const local = prev.find(b => b.id === r.id);
             const remoteBlock = { id: r.id, type: r.type, html: r.html, text: r.text_content, indent: r.indent };
-            if (!local || local.html !== r.html || local.type !== r.type || local.indent !== r.indent) {
-              changed = true;
-              return remoteBlock;
-            }
+            if (!local || local.html !== r.html || local.type !== r.type || local.indent !== r.indent) { changed = true; return remoteBlock; }
             return local;
           });
-
-          // Catch local blocks that no longer exist remotely (rare, but covers
-          // a delete that came through polling instead of realtime) — but
-          // never drop a block that still has a pending save or has focus
-          const finalBlocks = merged.filter(b =>
-            remoteIds.has(b.id) || b.id === focusedId || pendingSaveIds.current.has(b.id)
-          );
+          const finalBlocks = merged.filter(b => remoteIds.has(b.id) || b.id === focusedId || pendingSaveIds.current.has(b.id));
           if (finalBlocks.length !== prev.length) changed = true;
-
           sawChange = changed;
-          if (!changed) return prev; // no-op, avoids needless re-render
+          if (!changed) return prev;
           return finalBlocks;
         });
-
-        // Keep the diff baseline in sync so commitBlocks doesn't re-push
-        // things that just arrived via polling — but don't stomp the
-        // baseline for blocks that still have a save in flight
         const map = new Map<string, any>(lastKnownBlocks.current);
-        sorted.forEach(r => {
-          if (!pendingSaveIds.current.has(r.id)) {
-            map.set(r.id, { html: r.html, type: r.type, indent: r.indent, position: r.position });
-          }
-        });
+        sorted.forEach(r => { if (!pendingSaveIds.current.has(r.id)) map.set(r.id, { html: r.html, type: r.type, indent: r.indent, position: r.position }); });
         lastKnownBlocks.current = map;
-      } catch (e) {
-        // Silent — this is a background safety net, don't surface errors for it
-      }
+      } catch (e) {}
       scheduleNext();
-
       function scheduleNext() {
         if (cancelled) return;
-        // Also treat a pending local save as "active" — don't back off
-        // while the user is mid-edit even if the poll itself saw no
-        // remote change yet (their own keystrokes count as activity)
         const userIsActivelyEditing = pendingSaveIds.current.size > 0;
-        if (sawChange || userIsActivelyEditing) {
-          consecutiveUnchangedPolls.current = 0;
-        } else {
-          consecutiveUnchangedPolls.current++;
-        }
-        const nextDelay = consecutiveUnchangedPolls.current >= EMPTY_POLLS_BEFORE_SLOW
-          ? POLL_SLOW_MS
-          : POLL_FAST_MS;
+        if (sawChange || userIsActivelyEditing) consecutiveUnchangedPolls.current = 0;
+        else consecutiveUnchangedPolls.current++;
+        const nextDelay = consecutiveUnchangedPolls.current >= EMPTY_POLLS_BEFORE_SLOW ? POLL_SLOW_MS : POLL_FAST_MS;
         pollIntervalRef.current = setTimeout(poll, nextDelay);
       }
     };
-
     pollIntervalRef.current = setTimeout(poll, POLL_FAST_MS);
     return () => { cancelled = true; if (pollIntervalRef.current) clearTimeout(pollIntervalRef.current); };
   }, [activeRes?.id]);
@@ -440,44 +459,29 @@ export default function Resolutions() {
     setSyncStatus('saved');
     setShowHistory(false);
     setShowAmendments(false);
+    setShowAttachments(false);
     setAmendMode(null);
-    // Remember for refresh
     try { localStorage.setItem('sodmun_last_reso_id', String(res.id)); } catch {}
-
-    // ── Load blocks from the dedicated table — not the JSON blob ──────────────
-    // Each block is its own row, so concurrent edits to different blocks
-    // never overwrite each other.
     try {
       const result = await getBlocks(res.id);
       const rows = result.blocks || [];
       if (rows.length > 0) {
-        const loaded = rows
-          .sort((a: any, b: any) => a.position - b.position)
-          .map((r: any) => ({ id: r.id, type: r.type, html: r.html, text: r.text_content, indent: r.indent }));
+        const loaded = rows.sort((a: any, b: any) => a.position - b.position).map((r: any) => ({ id: r.id, type: r.type, html: r.html, text: r.text_content, indent: r.indent }));
         setBlocks(loaded);
       } else {
-        // No block rows yet — fall back to legacy content blob once, then
-        // it'll get migrated to block rows as soon as something is edited
         try {
           const parsed = typeof res.content === 'string' ? JSON.parse(res.content) : res.content;
           setBlocks(Array.isArray(parsed) && parsed.length > 0 ? parsed : [{ id: Date.now().toString(), type:'heading', html:'', text:'', indent:0 }]);
-        } catch {
-          setBlocks([{ id: Date.now().toString(), type:'heading', html:'', text:'', indent:0 }]);
-        }
+        } catch { setBlocks([{ id: Date.now().toString(), type:'heading', html:'', text:'', indent:0 }]); }
       }
     } catch (e) {
       console.error('Failed to load blocks:', e);
       setBlocks([{ id: Date.now().toString(), type:'heading', html:'', text:'', indent:0 }]);
     }
-
     loadAmendments(res.id);
-
-    // Seed the diff baseline so the first real edit only saves what changed
     setTimeout(() => {
       const map = new Map<string, any>();
-      pendingBlocks.current.forEach((b: any, idx: number) => {
-        map.set(b.id, { html: b.html, type: b.type, indent: b.indent, position: idx });
-      });
+      pendingBlocks.current.forEach((b: any, idx: number) => { map.set(b.id, { html: b.html, type: b.type, indent: b.indent, position: idx }); });
       lastKnownBlocks.current = map;
     }, 0);
   };
@@ -485,93 +489,43 @@ export default function Resolutions() {
   const handleCreateResolution = async () => {
     if (!newResTitle.trim() || !selectedBlocId) return;
     const init = JSON.stringify([{ id: Date.now().toString(), type:'heading', html:'', text:'', indent:0 }]);
-    const { data: res } = await supabase.from('resolutions')
-      .insert([{ title: newResTitle, bloc_id: parseInt(selectedBlocId), committee: profile?.committee, content: init }])
-      .select().single();
+    const { data: res } = await supabase.from('resolutions').insert([{ title: newResTitle, bloc_id: parseInt(selectedBlocId), committee: profile?.committee, content: init }]).select().single();
     if (res) { setResolutions([res, ...resolutions]); openResolution(res); setIsResModal(false); setNewResTitle(''); }
   };
-
-  // ── Save — block-level diffing, NOT whole-document overwrite ──────────────────
-  // This is the fix for concurrent-edit data loss: instead of writing the
-  // entire `blocks` array to one JSON column (which clobbers anyone else's
-  // in-flight edit), we diff against the last-known state and only push
-  // the specific block(s) that actually changed, plus handle deletions
-  // and position changes separately. Two people editing different blocks
-  // now never overwrite each other's work.
 
   const syncBlocksToDb = async (updated: any[]) => {
     if (!activeResRef.current) return;
     const resId = activeResRef.current.id;
     const prevMap = lastKnownBlocks.current;
     const newIds = new Set(updated.map(b => b.id));
-
-    // Find blocks that changed (new, or content/position differs from last save)
-    const changed = updated.filter((b, idx) => {
-      const prev = prevMap.get(b.id);
-      if (!prev) return true; // new block
-      return prev.html !== b.html || prev.type !== b.type || prev.indent !== b.indent || prev.position !== idx;
-    });
-
-    // Find blocks that were deleted
+    const changed = updated.filter((b, idx) => { const prev = prevMap.get(b.id); if (!prev) return true; return prev.html !== b.html || prev.type !== b.type || prev.indent !== b.indent || prev.position !== idx; });
     const deletedIds = Array.from(prevMap.keys()).filter(id => !newIds.has(id));
-
     try {
-      await Promise.all([
-        ...changed.map((b, _i) => {
-          const position = updated.findIndex(x => x.id === b.id);
-          return upsertBlock(resId, b.id, position, b.type, b.html, b.text, b.indent);
-        }),
-        ...deletedIds.map(id => deleteBlock(resId, id)),
-      ]);
-
-      // Update our local "last known" snapshot
+      await Promise.all([...changed.map((b) => { const position = updated.findIndex(x => x.id === b.id); return upsertBlock(resId, b.id, position, b.type, b.html, b.text, b.indent); }), ...deletedIds.map(id => deleteBlock(resId, id))]);
       const newMap = new Map<string, any>();
       updated.forEach((b, idx) => newMap.set(b.id, { html: b.html, type: b.type, indent: b.indent, position: idx }));
       lastKnownBlocks.current = newMap;
-
-      // Save confirmed — these blocks are no longer "pending", safe for the
-      // poll to overwrite them again if a newer remote version shows up
       changed.forEach(b => pendingSaveIds.current.delete(b.id));
       deletedIds.forEach(id => pendingSaveIds.current.delete(id));
-
       lastSaveTime.current = Date.now();
       setSyncStatus('saved');
-    } catch (e) {
-      console.error('Block sync failed:', e);
-      setSyncStatus('saved'); // don't get stuck on "saving" forever
-    }
+    } catch (e) { console.error('Block sync failed:', e); setSyncStatus('saved'); }
   };
 
   const commitBlocks = (updated: any[]) => {
     setBlocks(updated);
     setSyncStatus('saving');
-
-    // Mark every block that differs from the last confirmed save as "pending"
-    // — the poll fallback will skip these until syncBlocksToDb confirms them.
-    // This is what fixes the "edit disappears then comes back" flicker: the
-    // poll was previously only protecting the focused block, so an edit you'd
-    // already moved away from (but hadn't finished saving) could get clobbered
-    // by a stale poll result, then "reappear" once the debounced save landed.
     updated.forEach((b, idx) => {
       const prev = lastKnownBlocks.current.get(b.id);
-      if (!prev || prev.html !== b.html || prev.type !== b.type || prev.indent !== b.indent || prev.position !== idx) {
-        pendingSaveIds.current.add(b.id);
-      }
+      if (!prev || prev.html !== b.html || prev.type !== b.type || prev.indent !== b.indent || prev.position !== idx) pendingSaveIds.current.add(b.id);
     });
-
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     const since = Date.now() - lastSaveTime.current;
     if (since > 1500) syncBlocksToDb(updated);
     else saveTimeoutRef.current = setTimeout(() => syncBlocksToDb(updated), 400);
-
-    // Auto-version every 5 minutes if changes exist — version snapshots still
-    // use the full JSON blob since they're just point-in-time history, not
-    // the live editing surface
     if (versionAutoRef.current) clearTimeout(versionAutoRef.current);
     versionAutoRef.current = setTimeout(() => {
-      if (activeResRef.current && pendingBlocks.current.length > 0) {
-        saveResolutionVersion(activeResRef.current.id, JSON.stringify(pendingBlocks.current), 'Auto').catch(() => {});
-      }
+      if (activeResRef.current && pendingBlocks.current.length > 0) saveResolutionVersion(activeResRef.current.id, JSON.stringify(pendingBlocks.current), 'Auto').catch(() => {});
     }, 5 * 60 * 1000);
   };
 
@@ -585,15 +539,13 @@ export default function Resolutions() {
     }, 600);
   };
 
-  // ── Keyboard handler ──────────────────────────────────────────────────────────
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>, index: number, id: string, el: HTMLDivElement | null) => {
     const block = blocks[index];
     trackCursorBlock(block.id);
     if (e.key === 'Tab' && !e.shiftKey) {
       e.preventDefault();
       const u = [...blocks];
-      if (u[index].type === 'paragraph') { u[index].type = 'point'; u[index].indent = 0; }
-      else if (u[index].type === 'point' && u[index].indent < 2) u[index].indent += 1;
+      if (u[index].type === 'paragraph') { u[index].type = 'point'; u[index].indent = 0; } else if (u[index].type === 'point' && u[index].indent < 2) u[index].indent += 1;
       commitBlocks(u);
     } else if (e.key === 'Tab' && e.shiftKey && block.type === 'point') {
       e.preventDefault();
@@ -602,11 +554,7 @@ export default function Resolutions() {
       commitBlocks(u);
     } else if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      if (block.type === 'point' && (el?.textContent === '' || el?.innerHTML === '<br>')) {
-        const u = [...blocks];
-        if (block.indent > 0) u[index].indent -= 1; else u[index].type = 'paragraph';
-        commitBlocks(u); return;
-      }
+      if (block.type === 'point' && (el?.textContent === '' || el?.innerHTML === '<br>')) { const u = [...blocks]; if (block.indent > 0) u[index].indent -= 1; else u[index].type = 'paragraph'; commitBlocks(u); return; }
       const nb = { id: Date.now().toString(), type: block.type === 'point' ? 'point' : 'paragraph', html:'', text:'', indent: block.type === 'point' ? block.indent : 0 };
       const u = [...blocks]; u.splice(index + 1, 0, nb); commitBlocks(u);
       setTimeout(() => { const nodes = document.querySelectorAll('[contenteditable]'); if (nodes[index+1]) (nodes[index+1] as HTMLElement).focus(); }, 10);
@@ -626,32 +574,20 @@ export default function Resolutions() {
     if (block.type !== 'point') return '';
     const ind = block.indent;
     let count = 1;
-    for (let i = ci - 1; i >= 0; i--) {
-      if (blocks[i].type !== 'point') continue;
-      if (blocks[i].indent < ind) break;
-      if (blocks[i].indent === ind) count++;
-    }
+    for (let i = ci - 1; i >= 0; i--) { if (blocks[i].type !== 'point') continue; if (blocks[i].indent < ind) break; if (blocks[i].indent === ind) count++; }
     const rom = (n: number) => ['','i','ii','iii','iv','v','vi','vii','viii','ix','x'][n] || n.toString();
     if (ind === 0) return `${count}.`;
     if (ind === 1) return `${String.fromCharCode(96 + count)}.`;
     return `${rom(count)}.`;
   };
 
-  // ── Version history ────────────────────────────────────────────────────────────
   const loadVersions = async () => {
     setLV(true);
-    try {
-      const result = await getResolutionVersions(activeRes.id);
-      setVersions(result.versions || []);
-    } catch (e) { console.error(e); }
+    try { const result = await getResolutionVersions(activeRes.id); setVersions(result.versions || []); } catch (e) { console.error(e); }
     setLV(false);
   };
 
-  const handleShowHistory = () => {
-    setShowHistory(v => !v);
-    setShowAmendments(false);
-    if (!showHistory) loadVersions();
-  };
+  const handleShowHistory = () => { setShowHistory(v => !v); setShowAmendments(false); setShowAttachments(false); if (!showHistory) loadVersions(); };
 
   const handleRestoreVersion = async (ver: any) => {
     if (!window.confirm(`Restore version from ${timeAgo(ver.saved_at)}? Current content will be saved as a new version.`)) return;
@@ -659,97 +595,58 @@ export default function Resolutions() {
       const result = await restoreResolutionVersion(activeRes.id, ver.id);
       const parsed = typeof result.content === 'string' ? JSON.parse(result.content) : result.content;
       if (Array.isArray(parsed)) setBlocks(parsed);
-      setPreviewVersion(null);
-      setShowHistory(false);
-      setSyncStatus('saved');
+      setPreviewVersion(null); setShowHistory(false); setSyncStatus('saved');
     } catch (e) { console.error(e); }
   };
 
-  // ── Amendments ─────────────────────────────────────────────────────────────────
   const loadAmendments = async (resId: number) => {
-    try {
-      const result = await getAmendments(resId);
-      setAmendments(result.amendments || []);
-    } catch (e) { console.error(e); }
+    try { const result = await getAmendments(resId); setAmendments(result.amendments || []); } catch (e) { console.error(e); }
   };
 
-  // ── Selection detection: show floating toolbar on text select ──────────────
   const handleDocumentMouseUp = useCallback((e: MouseEvent) => {
-    // Don't trigger if clicking inside the popup itself
     if ((e.target as HTMLElement).closest('.amend-popup')) return;
-    // Don't show amendment toolbar on locked resolutions
-    if (activeResRef.current?.status === 'locked') {
-      setSelectionToolbar(null);
-      return;
-    }
-    // Only show if amendments are open
-    if (!activeResRef.current?.amendments_open) {
-      setSelectionToolbar(null);
-      return;
-    }
+    if (activeResRef.current?.status === 'locked') { setSelectionToolbar(null); return; }
+    if (!activeResRef.current?.amendments_open) { setSelectionToolbar(null); return; }
     const userIsChair = !!(profileRef?.current?.role && profileRef.current.role !== 'Delegate');
-    const canAmend = true; // amendments_open is already confirmed above
+    const canAmend = true;
     setTimeout(() => {
       const sel = window.getSelection();
-      // If no selection and amendments open: show Add-only toolbar at cursor position
       if (!sel || sel.isCollapsed || !sel.toString().trim()) {
         if (canAmend || userIsChair) {
           const paper = document.getElementById('resolution-paper');
           if (paper?.contains(e.target as Node)) {
-            // Find which block was clicked for "add" position
             const blockEl = (e.target as HTMLElement).closest?.('[data-block-id]');
             const blockId = blockEl?.getAttribute('data-block-id') || '';
             setSelectionData({ blockId, charStart: 0, charEnd: 0, text: '' });
-            // Show add-only toolbar near cursor
             setSelectionToolbar({ x: e.clientX, y: e.clientY + window.scrollY });
-          } else {
-            setSelectionToolbar(null);
-          }
-        } else {
-          setSelectionToolbar(null);
-        }
+          } else { setSelectionToolbar(null); }
+        } else { setSelectionToolbar(null); }
         return;
       }
-      // Only trigger if selection is inside the document paper
       const range = sel.getRangeAt(0);
       const container = range.commonAncestorContainer as HTMLElement;
       const paper = document.getElementById('resolution-paper');
       if (!paper?.contains(container)) { setSelectionToolbar(null); return; }
-
-      // Find block
-      const blockEl = container.closest?.('[data-block-id]') ||
-                      container.parentElement?.closest?.('[data-block-id]');
+      const blockEl = container.closest?.('[data-block-id]') || container.parentElement?.closest?.('[data-block-id]');
       const blockId = blockEl?.getAttribute('data-block-id') || '';
       const text = sel.toString();
       const block = blocks.find((b: any) => b.id === blockId);
       const fullText = block?.text || '';
       const charStart = Math.max(0, fullText.indexOf(text));
       const charEnd   = Math.max(charStart, charStart + text.length);
-
       setSelectionData({ blockId, charStart, charEnd, text });
-
-      // Position toolbar above selection
       const rect = range.getBoundingClientRect();
-      setSelectionToolbar({
-        x: rect.left + rect.width / 2,
-        y: rect.top + window.scrollY,
-      });
+      setSelectionToolbar({ x: rect.left + rect.width / 2, y: rect.top + window.scrollY });
     }, 10);
   }, [blocks]);
 
-  useEffect(() => {
-    document.addEventListener('mouseup', handleDocumentMouseUp);
-    return () => document.removeEventListener('mouseup', handleDocumentMouseUp);
-  }, [handleDocumentMouseUp]);
+  useEffect(() => { document.addEventListener('mouseup', handleDocumentMouseUp); return () => document.removeEventListener('mouseup', handleDocumentMouseUp); }, [handleDocumentMouseUp]);
 
   const openAmendPopup = (type: AmendType) => {
     if (!selectionData && type !== 'add') return;
     const sel = window.getSelection();
     let rect = { left: window.innerWidth / 2, bottom: 200 };
-    if (sel && !sel.isCollapsed) {
-      const r = sel.getRangeAt(0).getBoundingClientRect();
-      rect = { left: r.left + r.width / 2, bottom: r.bottom + window.scrollY };
-    }
+    if (sel && !sel.isCollapsed) { const r = sel.getRangeAt(0).getBoundingClientRect(); rect = { left: r.left + r.width / 2, bottom: r.bottom + window.scrollY }; }
     setAmendPopup({ x: rect.left, y: rect.bottom + 8, type });
     setAmendInput('');
     setSelectionToolbar(null);
@@ -760,114 +657,57 @@ export default function Resolutions() {
     setAmendSubmitting(true);
     try {
       const sd = selectionData;
-      await submitAmendment(
-        activeRes.id,
-        amendPopup!.type,
-        sd?.blockId || '',
-        sd?.charStart ?? 0,
-        sd?.charEnd ?? 0,
-        sd?.text || '',
-        amendInput,
-      );
-      setAmendPopup(null);
-      setAmendInput('');
-      setSelectionData(null);
+      await submitAmendment(activeRes.id, amendPopup!.type, sd?.blockId || '', sd?.charStart ?? 0, sd?.charEnd ?? 0, sd?.text || '', amendInput);
+      setAmendPopup(null); setAmendInput(''); setSelectionData(null);
       loadAmendments(activeRes.id);
     } catch (e) { console.error(e); }
     setAmendSubmitting(false);
   };
-
-  const startAmendMode = (type: AmendType) => { openAmendPopup(type); };
-  const captureSelection = () => {};
 
   const handleReviewAmendment = async (id: number, status: 'approved' | 'rejected') => {
     try {
       await reviewAmendment(id, status);
       loadAmendments(activeRes.id);
       if (status === 'approved') {
-        // Reload blocks from DB
         const { data: res } = await supabase.from('resolutions').select('content').eq('id', activeRes.id).single();
-        if (res) {
-          const parsed = JSON.parse(res.content);
-          if (Array.isArray(parsed)) setBlocks(parsed);
-        }
+        if (res) { const parsed = JSON.parse(res.content); if (Array.isArray(parsed)) setBlocks(parsed); }
       }
     } catch (e) { console.error(e); }
   };
 
-  // ── Chair status actions ──────────────────────────────────────────────────────
   const handleSubmit = async () => {
     if (!window.confirm('Submit this resolution for review? Delegates will no longer be able to edit it.')) return;
-    try {
-      await submitResolution(activeRes.id);
-      setActiveRes((p: any) => ({ ...p, status: 'submitted' }));
-      setResolutions(prev => prev.map(r => r.id === activeRes.id ? { ...r, status: 'submitted' } : r));
-    } catch (e) { console.error(e); }
+    try { await submitResolution(activeRes.id); setActiveRes((p: any) => ({ ...p, status: 'submitted' })); setResolutions(prev => prev.map(r => r.id === activeRes.id ? { ...r, status: 'submitted' } : r)); } catch (e) { console.error(e); }
   };
 
   const handleLock = async () => {
     try {
-      if (activeRes.status === 'locked') {
-        await unlockResolution(activeRes.id);
-        setActiveRes((p: any) => ({ ...p, status: 'draft' }));
-      } else {
-        await lockResolution(activeRes.id);
-        setActiveRes((p: any) => ({ ...p, status: 'locked' }));
-      }
+      if (activeRes.status === 'locked') { await unlockResolution(activeRes.id); setActiveRes((p: any) => ({ ...p, status: 'draft' })); }
+      else { await lockResolution(activeRes.id); setActiveRes((p: any) => ({ ...p, status: 'locked' })); }
     } catch (e) { console.error(e); }
   };
 
-  // Reload amendments whenever the panel is opened
-  useEffect(() => {
-    if (showAmendments && activeRes?.id) {
-      loadAmendments(activeRes.id);
-    }
-  }, [showAmendments]);
+  useEffect(() => { if (showAmendments && activeRes?.id) loadAmendments(activeRes.id); }, [showAmendments]);
 
   const handleToggleAmendments = async () => {
     const next = !activeRes.amendments_open;
-    try {
-      await toggleAmendments(activeRes.id, next);
-      setActiveRes((p: any) => ({ ...p, amendments_open: next }));
-      setResolutions(prev => prev.map(r => r.id === activeRes.id ? { ...r, amendments_open: next } : r));
-    } catch (e) { console.error(e); }
+    try { await toggleAmendments(activeRes.id, next); setActiveRes((p: any) => ({ ...p, amendments_open: next })); setResolutions(prev => prev.map(r => r.id === activeRes.id ? { ...r, amendments_open: next } : r)); } catch (e) { console.error(e); }
   };
 
   const handleReopen = async () => {
-    try {
-      await reopenResolution(activeRes.id);
-      setActiveRes((p: any) => ({ ...p, status: 'draft', submitted_at: null }));
-    } catch (e) { console.error(e); }
+    try { await reopenResolution(activeRes.id); setActiveRes((p: any) => ({ ...p, status: 'draft', submitted_at: null })); } catch (e) { console.error(e); }
   };
 
-  // ── Permissions ───────────────────────────────────────────────────────────────
-  // locked = nobody edits (not even chairs)
-  // submitted = only chairs can edit
-  // draft = everyone in the bloc can edit
-  const canEdit =
-    activeRes?.status === 'locked'    ? false :
-    activeRes?.status === 'submitted' ? isChair :
-    true; // draft — both chairs and delegates
-
-  // Delegates only see their own amendments + approved ones
-  const visibleAmendments = isChair
-    ? amendments
-    : amendments.filter(a => a.submitted_by === authUser?.id || a.status === 'approved');
-
+  const canEdit = activeRes?.status === 'locked' ? false : activeRes?.status === 'submitted' ? isChair : true;
+  const visibleAmendments = isChair ? amendments : amendments.filter(a => a.submitted_by === authUser?.id || a.status === 'approved');
   const filteredResolutions = blocFilter === 'all' ? resolutions : resolutions.filter(r => r.bloc_id?.toString() === blocFilter);
-
   const statusColor = (s: string) => s === 'locked' ? '#DC2626' : s === 'submitted' ? '#F59E0B' : '#22C55E';
   const statusLabel = (s: string) => s === 'locked' ? 'Locked' : s === 'submitted' ? 'Submitted' : 'Draft';
-
-  const pendingAmendments = isChair
-    ? amendments.filter(a => a.status === 'pending')
-    : amendments.filter(a => a.submitted_by === authUser?.id && a.status === 'pending');
+  const pendingAmendments = isChair ? amendments.filter(a => a.status === 'pending') : amendments.filter(a => a.submitted_by === authUser?.id && a.status === 'pending');
 
   // ── EDITOR VIEW ───────────────────────────────────────────────────────────────
   if (activeRes) {
-    const previewBlocks = previewVersion
-      ? (() => { try { return JSON.parse(previewVersion.content); } catch { return []; } })()
-      : null;
+    const previewBlocks = previewVersion ? (() => { try { return JSON.parse(previewVersion.content); } catch { return []; } })() : null;
 
     return (
       <div style={{ height:'100vh', display:'flex', flexDirection:'column', background: presentationMode ? 'var(--bg-elevated)' : 'var(--bg-base)', overflow:'hidden' }}>
@@ -875,17 +715,13 @@ export default function Resolutions() {
           @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
           [contenteditable]:empty:before { content:attr(data-placeholder); color:var(--text-muted); pointer-events:none; display:block; }
           [contenteditable]:focus { outline:none; }
-          /* Amendment selection highlight */
           .amend-select-mode::selection { background: rgba(245,158,11,0.35); color: inherit; }
           .amend-select-mode ::-moz-selection { background: rgba(245,158,11,0.35); color: inherit; }
-
           .ver-panel { width:300px; flex-shrink:0; border-left:1px solid var(--border); background:var(--bg-sidebar); display:flex; flex-direction:column; overflow:hidden; }
           .ver-item { padding:12px 14px; border-bottom:1px solid var(--border); cursor:pointer; transition:background 0.1s; }
           .ver-item:hover { background:var(--bg-surface); }
           .ver-item:last-child { border-bottom:none; }
           .status-pill { font-size:10px; font-weight:800; padding:2px 8px; border-radius:99px; text-transform:uppercase; letter-spacing:1px; }
-
-          /* Floating selection toolbar */
           .sel-toolbar { position:fixed; transform:translate(-50%,-100%); margin-top:-8px; z-index:900; display:flex; gap:3px; background:var(--bg-elevated); border:1px solid var(--border); border-radius:10px; padding:5px; box-shadow:var(--shadow-lg); animation:popIn 0.12s ease; }
           @keyframes popIn { from{opacity:0;transform:translate(-50%,-90%)} to{opacity:1;transform:translate(-50%,-100%)} }
           .sel-btn { font-size:11px; font-weight:700; padding:5px 11px; border-radius:7px; border:1px solid transparent; cursor:pointer; font-family:Manrope,sans-serif; transition:all 0.1s; letter-spacing:0.3px; }
@@ -895,14 +731,10 @@ export default function Resolutions() {
           .sel-btn-modify:hover { background:rgba(245,158,11,0.22); }
           .sel-btn-strike { background:rgba(220,38,38,0.10);  color:#DC2626; border-color:rgba(220,38,38,0.22); }
           .sel-btn-strike:hover { background:rgba(220,38,38,0.20); }
-
-          /* Popup input */
           .amend-popup { position:fixed; z-index:901; background:var(--bg-elevated); border:1px solid var(--border); border-radius:14px; padding:14px; box-shadow:var(--shadow-xl); width:280px; transform:translateX(-50%); animation:popIn 0.15s ease; }
           .amend-popup-header { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:1px; margin-bottom:10px; }
           .amend-popup input { font-size:13px; padding:9px 12px; margin-bottom:10px; border-radius:9px; }
           .amend-popup-btns { display:flex; gap:7px; }
-
-          /* Bottom amendment bar */
           .amend-bar { position:fixed; bottom:0; left:0; right:0; z-index:800; background:var(--bg-elevated); border-top:1px solid var(--border); box-shadow:0 -4px 24px rgba(0,0,0,0.10); transform:translateY(100%); transition:transform 0.28s cubic-bezier(0.4,0,0.2,1); }
           .amend-bar.open { transform:translateY(0); }
           .amend-bar-header { display:flex; align-items:center; gap:12px; padding:10px 20px; border-bottom:1px solid var(--border); cursor:pointer; user-select:none; }
@@ -929,7 +761,6 @@ export default function Resolutions() {
                 <div style={{ width:8, height:8, borderRadius:'50%', background:syncStatus==='saved'?'#22C55E':'var(--accent)', transition:'background 0.3s' }} />
                 <span style={{ fontSize:12, color:'var(--text-muted)', fontWeight:500 }}>{syncStatus==='saved'?'All changes saved':'Saving…'}</span>
               </div>
-              {/* Presence indicators */}
               {presences.length > 0 && (
                 <div style={{ display:'flex', gap:4 }}>
                   {presences.slice(0,4).map((p: any) => (
@@ -943,18 +774,14 @@ export default function Resolutions() {
             </div>
 
             <div style={{ display:'flex', gap:6, alignItems:'center' }}>
-              {/* Status pill */}
               <span className="status-pill" style={{ background:`${statusColor(activeRes.status)}18`, color:statusColor(activeRes.status), border:`1px solid ${statusColor(activeRes.status)}30` }}>
                 {statusLabel(activeRes.status)}
               </span>
 
-              {/* Chair actions */}
               {isChair && (
                 <>
                   {activeRes.status === 'submitted' && (
-                    <button onClick={handleReopen} style={{ fontSize:11, padding:'6px 12px', borderRadius:8, border:'1px solid var(--border)', background:'var(--bg-surface)', color:'var(--text-secondary)', cursor:'pointer', fontFamily:'Manrope,sans-serif', fontWeight:700 }}>
-                      Reopen
-                    </button>
+                    <button onClick={handleReopen} style={{ fontSize:11, padding:'6px 12px', borderRadius:8, border:'1px solid var(--border)', background:'var(--bg-surface)', color:'var(--text-secondary)', cursor:'pointer', fontFamily:'Manrope,sans-serif', fontWeight:700 }}>Reopen</button>
                   )}
                   <button onClick={handleLock} style={{ fontSize:11, padding:'6px 12px', borderRadius:8, border:'1px solid', cursor:'pointer', fontFamily:'Manrope,sans-serif', fontWeight:700, display:'flex', alignItems:'center', gap:5, background: activeRes.status==='locked' ? 'rgba(220,38,38,0.08)' : 'var(--bg-surface)', color: activeRes.status==='locked' ? '#DC2626' : 'var(--text-secondary)', borderColor: activeRes.status==='locked' ? 'rgba(220,38,38,0.25)' : 'var(--border)' }}>
                     {activeRes.status==='locked' ? <><IconUnlock/>Unlock</> : <><IconLock/>Lock</>}
@@ -962,37 +789,30 @@ export default function Resolutions() {
                 </>
               )}
 
-              {/* Delegate: submit — hidden when amendments are open */}
               {!isChair && activeRes.status === 'draft' && !activeRes.amendments_open && (
-                <button onClick={handleSubmit} style={{ fontSize:11, padding:'6px 14px', borderRadius:8, background:'var(--accent)', color:'#fff', border:'none', cursor:'pointer', fontFamily:'Manrope,sans-serif', fontWeight:700, boxShadow:'0 2px 8px rgba(240,124,0,0.25)' }}>
-                  Submit for Review
-                </button>
+                <button onClick={handleSubmit} style={{ fontSize:11, padding:'6px 14px', borderRadius:8, background:'var(--accent)', color:'#fff', border:'none', cursor:'pointer', fontFamily:'Manrope,sans-serif', fontWeight:700, boxShadow:'0 2px 8px rgba(240,124,0,0.25)' }}>Submit for Review</button>
               )}
 
-              {/* Version history */}
+              {/* Attachments button */}
+              <button onClick={() => { setShowAttachments(v=>!v); setShowHistory(false); setShowAmendments(false); }}
+                style={{ fontSize:11, padding:'6px 12px', borderRadius:8, border:'1px solid var(--border)', background: showAttachments ? 'var(--accent-soft)' : 'var(--bg-surface)', color: showAttachments ? 'var(--accent)' : 'var(--text-secondary)', cursor:'pointer', fontFamily:'Manrope,sans-serif', fontWeight:700, display:'flex', alignItems:'center', gap:5 }}>
+                <IconPaperclip /> Attachments
+              </button>
+
               <button onClick={handleShowHistory} style={{ fontSize:11, padding:'6px 12px', borderRadius:8, border:'1px solid var(--border)', background: showHistory ? 'var(--accent-soft)' : 'var(--bg-surface)', color: showHistory ? 'var(--accent)' : 'var(--text-secondary)', cursor:'pointer', fontFamily:'Manrope,sans-serif', fontWeight:700, display:'flex', alignItems:'center', gap:5 }}>
                 <IconHistory /> History
               </button>
 
-              {/* Amendments — only visible when amendments are open or for chairs */}
               {activeRes.amendments_open && (
-                <button onClick={() => { setShowAmendments(v=>!v); setShowHistory(false); }} style={{ fontSize:11, padding:'6px 12px', borderRadius:8, border:'1px solid var(--border)', background: showAmendments ? 'var(--accent-soft)' : 'var(--bg-surface)', color: showAmendments ? 'var(--accent)' : 'var(--text-secondary)', cursor:'pointer', fontFamily:'Manrope,sans-serif', fontWeight:700, display:'flex', alignItems:'center', gap:5, position:'relative' }}>
+                <button onClick={() => { setShowAmendments(v=>!v); setShowHistory(false); setShowAttachments(false); }} style={{ fontSize:11, padding:'6px 12px', borderRadius:8, border:'1px solid var(--border)', background: showAmendments ? 'var(--accent-soft)' : 'var(--bg-surface)', color: showAmendments ? 'var(--accent)' : 'var(--text-secondary)', cursor:'pointer', fontFamily:'Manrope,sans-serif', fontWeight:700, display:'flex', alignItems:'center', gap:5, position:'relative' }}>
                   <IconAmend /> Amendments
                   {pendingAmendments.length > 0 && <span style={{ position:'absolute', top:-4, right:-4, minWidth:16, height:16, borderRadius:99, background:'#DC2626', color:'#fff', fontSize:9, fontWeight:800, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 3px' }}>{pendingAmendments.length}</span>}
                 </button>
               )}
 
               {isChair && (
-                <button
-                  onClick={handleToggleAmendments}
-                  style={{ fontSize:11, padding:'6px 12px', borderRadius:8, border:'1px solid', cursor:'pointer', fontFamily:'Manrope,sans-serif', fontWeight:700, display:'flex', alignItems:'center', gap:5,
-                    background: activeRes.amendments_open ? 'rgba(99,102,241,0.10)' : 'var(--bg-surface)',
-                    color: activeRes.amendments_open ? '#6366F1' : 'var(--text-secondary)',
-                    borderColor: activeRes.amendments_open ? 'rgba(99,102,241,0.30)' : 'var(--border)',
-                  }}
-                >
-                  <IconAmend />
-                  {activeRes.amendments_open ? 'Close Amendments' : 'Open Amendments'}
+                <button onClick={handleToggleAmendments} style={{ fontSize:11, padding:'6px 12px', borderRadius:8, border:'1px solid', cursor:'pointer', fontFamily:'Manrope,sans-serif', fontWeight:700, display:'flex', alignItems:'center', gap:5, background: activeRes.amendments_open ? 'rgba(99,102,241,0.10)' : 'var(--bg-surface)', color: activeRes.amendments_open ? '#6366F1' : 'var(--text-secondary)', borderColor: activeRes.amendments_open ? 'rgba(99,102,241,0.30)' : 'var(--border)' }}>
+                  <IconAmend /> {activeRes.amendments_open ? 'Close Amendments' : 'Open Amendments'}
                 </button>
               )}
               {isChair && <button className="primary-btn" style={{ fontSize:11, padding:'8px 14px' }} onClick={() => setPresentationMode(true)}>Present</button>}
@@ -1004,17 +824,11 @@ export default function Resolutions() {
           <button onClick={() => setPresentationMode(false)} style={{ position:'fixed', top:20, right:20, padding:'8px 16px', background:'rgba(0,0,0,0.75)', backdropFilter:'blur(8px)', color:'#fff', borderRadius:8, zIndex:100, border:'none', fontWeight:700, fontSize:12, cursor:'pointer', fontFamily:'Manrope,sans-serif' }}>Exit</button>
         )}
 
-        {/* ── Status banner for delegates ── */}
-        {/* Amendments-open strip — amber, same style as locked */}
         {activeRes.amendments_open && activeRes.status !== 'locked' && (
           <div style={{ padding:'9px 24px', background:'rgba(245,158,11,0.10)', borderBottom:'1px solid rgba(245,158,11,0.28)', fontSize:12, fontWeight:700, color:'#92400E', flexShrink:0, display:'flex', alignItems:'center', gap:8 }}>
-            <IconAmend />
-            {isChair
-              ? 'Amendments are open — delegates can propose changes by highlighting text'
-              : 'Amendments open — highlight any text in the document to propose a change'}
+            <IconAmend /> {isChair ? 'Amendments are open — delegates can propose changes by highlighting text' : 'Amendments open — highlight any text in the document to propose a change'}
           </div>
         )}
-        {/* Submitted strip (only when amendments NOT open) */}
         {!isChair && activeRes.status === 'submitted' && !activeRes.amendments_open && (
           <div style={{ padding:'9px 24px', background:'rgba(245,158,11,0.08)', borderBottom:'1px solid rgba(245,158,11,0.20)', fontSize:12, fontWeight:700, color:'#B45309', flexShrink:0, display:'flex', alignItems:'center', gap:8 }}>
             <IconCheck /> Submitted for review — editing disabled. Waiting for chair to open amendments.
@@ -1028,19 +842,13 @@ export default function Resolutions() {
 
         {/* ── Body: doc + side panels ── */}
         <div style={{ flex:1, display:'flex', minHeight:0 }}>
-
-          {/* Doc scroll area */}
           <div style={{ flex:1, overflowY:'auto', overflowX:'hidden', padding: presentationMode ? '60px 40px' : '40px 52px' }}>
             <div style={{ margin:'0 auto', width:'100%', maxWidth:816 }}>
               <div id="resolution-paper" style={{ background:'var(--bg-elevated)', width:'100%', borderRadius: presentationMode ? 0 : 4, padding:`clamp(24px,6vw,72px) clamp(20px,8vw,96px)`, boxShadow: presentationMode ? 'none' : 'var(--shadow-md)', border: presentationMode ? 'none' : '1px solid var(--border)', boxSizing:'border-box', overflow:'hidden' }}>
-
-                {/* Title */}
                 <input value={activeRes.title} onChange={e => handleTitleChange(e.target.value)} spellCheck={false}
                   placeholder="Untitled Resolution" disabled={!canEdit}
-                  style={{ width:'100%', textAlign:'center', background:'transparent', border:'none', color: presentationMode ? 'var(--text-primary)' : 'var(--text-primary)', fontSize: presentationMode ? '40px' : '26px', fontWeight:800, fontFamily:'Manrope,sans-serif', textTransform:'uppercase', outline:'none', padding:0, marginBottom:8, letterSpacing:'-0.5px', boxSizing:'border-box', cursor: canEdit ? 'text' : 'default' }}
+                  style={{ width:'100%', textAlign:'center', background:'transparent', border:'none', color:'var(--text-primary)', fontSize: presentationMode ? '40px' : '26px', fontWeight:800, fontFamily:'Manrope,sans-serif', textTransform:'uppercase', outline:'none', padding:0, marginBottom:8, letterSpacing:'-0.5px', boxSizing:'border-box', cursor: canEdit ? 'text' : 'default' }}
                 />
-
-                {/* Subtitle */}
                 <div style={{ display:'flex', justifyContent:'center', marginBottom:32, gap:8, alignItems:'center' }}>
                   <div style={{ height:1, flex:1, background:'var(--border)' }} />
                   <span style={{ fontSize:11, fontWeight:600, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1.5px', whiteSpace:'nowrap' }}>
@@ -1049,23 +857,11 @@ export default function Resolutions() {
                   </span>
                   <div style={{ height:1, flex:1, background:'var(--border)' }} />
                 </div>
-
-                {/* Blocks — preview or live */}
                 {(previewBlocks || blocks).map((block: any, index: number) => (
                   <div key={block.id} data-block-id={block.id} onClick={() => trackCursorBlock(block.id)}>
-                    <EditableBlock
-                      block={block} index={index}
-                      commitBlocks={previewBlocks ? () => {} : commitBlocks}
-                      blocks={previewBlocks || blocks}
-                      handleKeyDown={handleKeyDown}
-                      getPrefix={getPrefix}
-                      canEdit={!previewBlocks && canEdit}
-                      presences={presences}
-                      amendmentsOpen={!!activeRes?.amendments_open && activeRes?.status !== 'locked'}
-                    />
+                    <EditableBlock block={block} index={index} commitBlocks={previewBlocks ? () => {} : commitBlocks} blocks={previewBlocks || blocks} handleKeyDown={handleKeyDown} getPrefix={getPrefix} canEdit={!previewBlocks && canEdit} presences={presences} amendmentsOpen={!!activeRes?.amendments_open && activeRes?.status !== 'locked'} />
                   </div>
                 ))}
-
                 {previewBlocks && (
                   <div style={{ marginTop:32, padding:'12px 16px', background:'rgba(99,102,241,0.07)', border:'1px solid rgba(99,102,241,0.20)', borderRadius:10, fontSize:12, fontWeight:600, color:'#6366F1', display:'flex', gap:12, alignItems:'center' }}>
                     Previewing historical version — {previewVersion?.label} · {timeAgo(previewVersion?.saved_at)}
@@ -1073,9 +869,19 @@ export default function Resolutions() {
                     {isChair && <button onClick={() => handleRestoreVersion(previewVersion)} style={{ background:'#6366F1', color:'#fff', border:'none', borderRadius:8, padding:'4px 12px', cursor:'pointer', fontWeight:700, fontFamily:'Manrope,sans-serif', fontSize:12 }}>Restore</button>}
                   </div>
                 )}
-
                 <div style={{ height:80 }} />
               </div>
+
+              {/* ── Attachments panel — below the paper ── */}
+              {showAttachments && (
+                <div style={{ marginTop:16, background:'var(--bg-elevated)', border:'1px solid var(--border)', borderRadius:12, overflow:'hidden', boxShadow:'var(--shadow-sm)' }}>
+                  <AttachmentsPanel
+                    resolutionId={activeRes.id}
+                    canUpload={canEdit || isChair}
+                    currentUserId={authUser?.id ?? ''}
+                  />
+                </div>
+              )}
             </div>
           </div>
 
@@ -1088,7 +894,7 @@ export default function Resolutions() {
               </div>
               <div style={{ flex:1, overflowY:'auto' }}>
                 {loadingVersions && <p style={{ padding:16, fontSize:12, color:'var(--text-muted)' }}>Loading…</p>}
-                {!loadingVersions && versions.length === 0 && <p style={{ padding:16, fontSize:12, color:'var(--text-muted)' }}>No versions saved yet. Versions are saved automatically on submit, lock, and every 5 min.</p>}
+                {!loadingVersions && versions.length === 0 && <p style={{ padding:16, fontSize:12, color:'var(--text-muted)' }}>No versions saved yet.</p>}
                 {versions.map(v => (
                   <div key={v.id} className="ver-item" onClick={() => setPreviewVersion(v)} style={{ background: previewVersion?.id === v.id ? 'var(--accent-soft)' : undefined }}>
                     <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:4 }}>
@@ -1105,11 +911,10 @@ export default function Resolutions() {
             </div>
           )}
 
-          {/* ── Floating selection toolbar ── */}
+          {/* Floating selection toolbar */}
           {selectionToolbar && activeRes.amendments_open && !amendPopup && activeRes.status !== 'locked' && (
             <div className="sel-toolbar" style={{ left: selectionToolbar.x, top: selectionToolbar.y }}>
-              {/* Show Add always; Modify+Strike only when text is selected */}
-              <button className="sel-btn sel-btn-add"    onClick={() => openAmendPopup('add')}>+ Add</button>
+              <button className="sel-btn sel-btn-add" onClick={() => openAmendPopup('add')}>+ Add</button>
               {selectionData?.text && <>
                 <button className="sel-btn sel-btn-modify" onClick={() => openAmendPopup('modify')}>~ Modify</button>
                 <button className="sel-btn sel-btn-strike" onClick={() => openAmendPopup('strike')}>✕ Strike</button>
@@ -1117,7 +922,6 @@ export default function Resolutions() {
             </div>
           )}
 
-          {/* Hint when amendments open but nothing selected */}
           {activeRes.amendments_open && !selectionToolbar && !amendPopup && activeRes.status !== 'locked' && (
             <div style={{ position:'fixed', bottom: showAmendments ? 300 : 60, left:'50%', transform:'translateX(-50%)', background:'var(--bg-elevated)', border:'1px solid var(--accent-mid)', borderRadius:99, padding:'7px 18px', fontSize:11, fontWeight:700, color:'var(--accent)', boxShadow:'var(--shadow-md)', pointerEvents:'none', whiteSpace:'nowrap', zIndex:799, display:'flex', alignItems:'center', gap:8 }}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -1125,130 +929,71 @@ export default function Resolutions() {
             </div>
           )}
 
-          {/* ── Floating amendment popup (input) ── */}
           {amendPopup && (
             <div className="amend-popup" style={{ left: Math.min(amendPopup.x, window.innerWidth - 150), top: Math.min(amendPopup.y, window.innerHeight - 200) }}>
-              <div className="amend-popup-header" style={{
-                color: amendPopup.type==='add' ? '#16A34A' : amendPopup.type==='modify' ? '#B45309' : '#DC2626'
-              }}>
+              <div className="amend-popup-header" style={{ color: amendPopup.type==='add' ? '#16A34A' : amendPopup.type==='modify' ? '#B45309' : '#DC2626' }}>
                 {amendPopup.type === 'add' ? '+ Add text' : amendPopup.type === 'modify' ? '~ Modify selection' : '✕ Strike selection'}
               </div>
               {selectionData?.text && (
-                <div style={{ fontSize:11, background:'var(--bg-surface)', border:'1px solid var(--border)', borderRadius:7, padding:'5px 9px', marginBottom:8, color:'var(--text-muted)', fontStyle:'italic', wordBreak:'break-word', maxHeight:48, overflow:'hidden' }}>
-                  "{selectionData.text}"
-                </div>
+                <div style={{ fontSize:11, background:'var(--bg-surface)', border:'1px solid var(--border)', borderRadius:7, padding:'5px 9px', marginBottom:8, color:'var(--text-muted)', fontStyle:'italic', wordBreak:'break-word', maxHeight:48, overflow:'hidden' }}>"{selectionData.text}"</div>
               )}
               {amendPopup.type !== 'strike' && (
-                <input
-                  autoFocus
-                  className="dark-input"
-                  value={amendInput}
-                  onChange={e => setAmendInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitAmendmentDraft(); } if (e.key === 'Escape') { setAmendPopup(null); } }}
-                  placeholder={amendPopup.type === 'add' ? 'Text to insert here…' : 'Replacement text…'}
-                  style={{ marginBottom:10 }}
-                />
+                <input autoFocus className="dark-input" value={amendInput} onChange={e => setAmendInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitAmendmentDraft(); } if (e.key === 'Escape') setAmendPopup(null); }} placeholder={amendPopup.type === 'add' ? 'Text to insert here…' : 'Replacement text…'} style={{ marginBottom:10 }} />
               )}
-              {amendPopup.type === 'strike' && (
-                <p style={{ fontSize:11, color:'var(--text-muted)', marginBottom:10, lineHeight:1.5 }}>
-                  The selected text will be proposed for deletion.
-                </p>
-              )}
+              {amendPopup.type === 'strike' && <p style={{ fontSize:11, color:'var(--text-muted)', marginBottom:10, lineHeight:1.5 }}>The selected text will be proposed for deletion.</p>}
               <div className="amend-popup-btns">
-                <button
-                  onClick={submitAmendmentDraft}
-                  disabled={amendSubmitting || (amendPopup.type !== 'strike' && !amendInput.trim())}
-                  style={{ flex:1, fontSize:12, fontWeight:700, padding:'8px', borderRadius:8, border:'none', cursor:'pointer', fontFamily:'Manrope,sans-serif',
-                    background: amendPopup.type==='add' ? '#16A34A' : amendPopup.type==='modify' ? '#B45309' : '#DC2626',
-                    color:'#fff', opacity: amendSubmitting ? 0.6 : 1 }}
-                >
+                <button onClick={submitAmendmentDraft} disabled={amendSubmitting || (amendPopup.type !== 'strike' && !amendInput.trim())} style={{ flex:1, fontSize:12, fontWeight:700, padding:'8px', borderRadius:8, border:'none', cursor:'pointer', fontFamily:'Manrope,sans-serif', background: amendPopup.type==='add' ? '#16A34A' : amendPopup.type==='modify' ? '#B45309' : '#DC2626', color:'#fff', opacity: amendSubmitting ? 0.6 : 1 }}>
                   {amendSubmitting ? 'Submitting…' : 'Submit'}
                 </button>
-                <button onClick={() => { setAmendPopup(null); setAmendInput(''); }} style={{ fontSize:12, fontWeight:700, padding:'8px 14px', borderRadius:8, border:'1px solid var(--border)', background:'transparent', color:'var(--text-secondary)', cursor:'pointer', fontFamily:'Manrope,sans-serif' }}>
-                  Cancel
-                </button>
+                <button onClick={() => { setAmendPopup(null); setAmendInput(''); }} style={{ fontSize:12, fontWeight:700, padding:'8px 14px', borderRadius:8, border:'1px solid var(--border)', background:'transparent', color:'var(--text-secondary)', cursor:'pointer', fontFamily:'Manrope,sans-serif' }}>Cancel</button>
               </div>
             </div>
           )}
         </div>
-      {/* ── Bottom amendment review bar ── */}
-      {activeRes && activeRes.amendments_open && (
-        <div className={`amend-bar ${showAmendments ? 'open' : ''}`}>
-          {/* Drag handle / header */}
-          <div className="amend-bar-header" onClick={() => setShowAmendments(v => !v)}>
-            <div style={{ display:'flex', alignItems:'center', gap:8, flex:1 }}>
-              <IconAmend />
-              <span style={{ fontSize:12, fontWeight:800, color:'var(--text-primary)' }}>Amendments</span>
-              {pendingAmendments.length > 0 && (
-                <span style={{ fontSize:10, fontWeight:800, padding:'1px 8px', borderRadius:99, background:'rgba(220,38,38,0.12)', color:'#DC2626', border:'1px solid rgba(220,38,38,0.20)' }}>
-                  {pendingAmendments.length} pending
-                </span>
-              )}
-              {!isChair && activeRes.amendments_open && (
-                <span style={{ fontSize:10, fontWeight:700, padding:'1px 8px', borderRadius:99, background:'rgba(99,102,241,0.10)', color:'#6366F1', border:'1px solid rgba(99,102,241,0.20)' }}>
-                  Open — select text to propose
-                </span>
-              )}
+
+        {/* ── Bottom amendment bar ── */}
+        {activeRes && activeRes.amendments_open && (
+          <div className={`amend-bar ${showAmendments ? 'open' : ''}`}>
+            <div className="amend-bar-header" onClick={() => setShowAmendments(v => !v)}>
+              <div style={{ display:'flex', alignItems:'center', gap:8, flex:1 }}>
+                <IconAmend />
+                <span style={{ fontSize:12, fontWeight:800, color:'var(--text-primary)' }}>Amendments</span>
+                {pendingAmendments.length > 0 && <span style={{ fontSize:10, fontWeight:800, padding:'1px 8px', borderRadius:99, background:'rgba(220,38,38,0.12)', color:'#DC2626', border:'1px solid rgba(220,38,38,0.20)' }}>{pendingAmendments.length} pending</span>}
+                {!isChair && activeRes.amendments_open && <span style={{ fontSize:10, fontWeight:700, padding:'1px 8px', borderRadius:99, background:'rgba(99,102,241,0.10)', color:'#6366F1', border:'1px solid rgba(99,102,241,0.20)' }}>Open — select text to propose</span>}
+              </div>
+              <span style={{ fontSize:10, color:'var(--text-muted)', fontWeight:600 }}>{showAmendments ? '▼ Hide' : '▲ Show'}</span>
             </div>
-            <span style={{ fontSize:10, color:'var(--text-muted)', fontWeight:600 }}>
-              {showAmendments ? '▼ Hide' : '▲ Show'}
-            </span>
-          </div>
-
-          {/* Amendment list */}
-          <div className="amend-list">
-            {visibleAmendments.length === 0 && (
-              <p style={{ padding:'14px 20px', fontSize:12, color:'var(--text-muted)' }}>{isChair ? 'No amendments submitted yet.' : 'No amendments yet. Submit one by highlighting text above.'}</p>
-            )}
-            {visibleAmendments.map(a => {
-              const typeColor = a.type==='add' ? { bg:'rgba(34,197,94,0.12)', c:'#16A34A' } : a.type==='strike' ? { bg:'rgba(220,38,38,0.10)', c:'#DC2626' } : { bg:'rgba(245,158,11,0.12)', c:'#B45309' };
-              const statusColor = a.status==='pending' ? { bg:'rgba(245,158,11,0.12)', c:'#B45309' } : a.status==='approved' ? { bg:'rgba(34,197,94,0.12)', c:'#16A34A' } : { bg:'rgba(220,38,38,0.10)', c:'#DC2626' };
-              return (
-                <div key={a.id} className="amend-item">
-                  {/* Type + status chips */}
-                  <div style={{ display:'flex', flexDirection:'column', gap:4, flexShrink:0, paddingTop:1 }}>
-                    <span className="amend-type-chip" style={{ background:typeColor.bg, color:typeColor.c, border:`1px solid ${typeColor.c}30` }}>{a.type}</span>
-                    <span className="amend-status-chip" style={{ background:statusColor.bg, color:statusColor.c }}>{a.status}</span>
-                  </div>
-                  {/* Content */}
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:3 }}>
-                      <span style={{ fontSize:11, fontWeight:700, color:'var(--text-secondary)' }}>
-                        {a.users?.delegation || a.users?.role || 'Unknown'}
-                      </span>
-                      <span style={{ fontSize:10, color:'var(--text-muted)' }}>{timeAgo(a.submitted_at)}</span>
+            <div className="amend-list">
+              {visibleAmendments.length === 0 && <p style={{ padding:'14px 20px', fontSize:12, color:'var(--text-muted)' }}>{isChair ? 'No amendments submitted yet.' : 'No amendments yet. Submit one by highlighting text above.'}</p>}
+              {visibleAmendments.map(a => {
+                const typeColor = a.type==='add' ? { bg:'rgba(34,197,94,0.12)', c:'#16A34A' } : a.type==='strike' ? { bg:'rgba(220,38,38,0.10)', c:'#DC2626' } : { bg:'rgba(245,158,11,0.12)', c:'#B45309' };
+                const statusColor = a.status==='pending' ? { bg:'rgba(245,158,11,0.12)', c:'#B45309' } : a.status==='approved' ? { bg:'rgba(34,197,94,0.12)', c:'#16A34A' } : { bg:'rgba(220,38,38,0.10)', c:'#DC2626' };
+                return (
+                  <div key={a.id} className="amend-item">
+                    <div style={{ display:'flex', flexDirection:'column', gap:4, flexShrink:0, paddingTop:1 }}>
+                      <span className="amend-type-chip" style={{ background:typeColor.bg, color:typeColor.c, border:`1px solid ${typeColor.c}30` }}>{a.type}</span>
+                      <span className="amend-status-chip" style={{ background:statusColor.bg, color:statusColor.c }}>{a.status}</span>
                     </div>
-                    {a.original_text && (
-                      <p style={{ fontSize:12, color:'var(--text-muted)', textDecoration: a.type==='strike' ? 'line-through' : 'none', marginBottom: a.proposed_text ? 2 : 0, wordBreak:'break-word', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:400 }}>
-                        {a.original_text}
-                      </p>
-                    )}
-                    {a.proposed_text && (
-                      <p style={{ fontSize:12, color:'var(--text-primary)', wordBreak:'break-word', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:400 }}>
-                        → {a.proposed_text}
-                      </p>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:3 }}>
+                        <span style={{ fontSize:11, fontWeight:700, color:'var(--text-secondary)' }}>{a.users?.delegation || a.users?.role || 'Unknown'}</span>
+                        <span style={{ fontSize:10, color:'var(--text-muted)' }}>{timeAgo(a.submitted_at)}</span>
+                      </div>
+                      {a.original_text && <p style={{ fontSize:12, color:'var(--text-muted)', textDecoration: a.type==='strike' ? 'line-through' : 'none', marginBottom: a.proposed_text ? 2 : 0, wordBreak:'break-word', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:400 }}>{a.original_text}</p>}
+                      {a.proposed_text && <p style={{ fontSize:12, color:'var(--text-primary)', wordBreak:'break-word', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:400 }}>→ {a.proposed_text}</p>}
+                    </div>
+                    {isChair && a.status === 'pending' && (
+                      <div style={{ display:'flex', gap:6, flexShrink:0 }}>
+                        <button onClick={() => handleReviewAmendment(a.id, 'approved')} style={{ fontSize:11, fontWeight:700, padding:'5px 12px', borderRadius:7, background:'rgba(34,197,94,0.12)', color:'#16A34A', border:'1px solid rgba(34,197,94,0.25)', cursor:'pointer', fontFamily:'Manrope,sans-serif', display:'flex', alignItems:'center', gap:4 }}><IconCheck /> Approve</button>
+                        <button onClick={() => handleReviewAmendment(a.id, 'rejected')} style={{ fontSize:11, fontWeight:700, padding:'5px 12px', borderRadius:7, background:'rgba(220,38,38,0.08)', color:'#DC2626', border:'1px solid rgba(220,38,38,0.20)', cursor:'pointer', fontFamily:'Manrope,sans-serif', display:'flex', alignItems:'center', gap:4 }}><IconX /> Reject</button>
+                      </div>
                     )}
                   </div>
-                  {/* Chair approve/reject */}
-                  {isChair && a.status === 'pending' && (
-                    <div style={{ display:'flex', gap:6, flexShrink:0 }}>
-                      <button onClick={() => handleReviewAmendment(a.id, 'approved')}
-                        style={{ fontSize:11, fontWeight:700, padding:'5px 12px', borderRadius:7, background:'rgba(34,197,94,0.12)', color:'#16A34A', border:'1px solid rgba(34,197,94,0.25)', cursor:'pointer', fontFamily:'Manrope,sans-serif', display:'flex', alignItems:'center', gap:4 }}>
-                        <IconCheck /> Approve
-                      </button>
-                      <button onClick={() => handleReviewAmendment(a.id, 'rejected')}
-                        style={{ fontSize:11, fontWeight:700, padding:'5px 12px', borderRadius:7, background:'rgba(220,38,38,0.08)', color:'#DC2626', border:'1px solid rgba(220,38,38,0.20)', cursor:'pointer', fontFamily:'Manrope,sans-serif', display:'flex', alignItems:'center', gap:4 }}>
-                        <IconX /> Reject
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        </div>
-      )}
-
+        )}
       </div>
     );
   }
@@ -1291,9 +1036,7 @@ export default function Resolutions() {
                 </div>
               </div>
               <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                <span style={{ fontSize:10, fontWeight:800, padding:'2px 8px', borderRadius:99, background:`${statusColor(r.status||'draft')}18`, color:statusColor(r.status||'draft') }}>
-                  {statusLabel(r.status||'draft')}
-                </span>
+                <span style={{ fontSize:10, fontWeight:800, padding:'2px 8px', borderRadius:99, background:`${statusColor(r.status||'draft')}18`, color:statusColor(r.status||'draft') }}>{statusLabel(r.status||'draft')}</span>
                 {r.updated_at && <span style={{ fontSize:10, color:'var(--text-muted)', fontWeight:500 }}>Edited {timeAgo(r.updated_at)}</span>}
               </div>
             </div>

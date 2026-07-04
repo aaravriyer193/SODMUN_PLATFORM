@@ -520,10 +520,10 @@ export default function Resolutions() {
   };
 
   const handleCreateResolution = async () => {
-    if (!newResTitle.trim() || !selectedBlocId) return;
+    if (!newResTitle.trim()) return;
     const init = JSON.stringify([{ id: Date.now().toString(), type:'heading', html:'', text:'', indent:0 }]);
     const { data: res } = await supabase.from('resolutions')
-      .insert([{ title: newResTitle, bloc_id: parseInt(selectedBlocId), committee: profile?.committee, content: init }])
+      .insert([{ title: newResTitle, bloc_id: selectedBlocId ? parseInt(selectedBlocId) : null, committee: profile?.committee, content: init }])
       .select().single();
     if (res) { setResolutions([res, ...resolutions]); openResolution(res); setIsResModal(false); setNewResTitle(''); }
   };
@@ -1438,7 +1438,7 @@ export default function Resolutions() {
             <h2>New Resolution</h2>
             <input className="dark-input" style={{ minHeight:48 }} value={newResTitle} onChange={e => setNewResTitle(e.target.value)} placeholder="e.g. Working Paper 1.1" />
             <select className="dark-input" style={{ minHeight:48 }} value={selectedBlocId} onChange={e => setSelectedBlocId(e.target.value)}>
-              <option value="">Select Bloc…</option>
+              <option value="">Independent (no bloc)</option>
               {myBlocs.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
             <div style={{ display:'flex', gap:10, marginTop:6 }}>

@@ -340,16 +340,14 @@ export default function Resolutions() {
       const myIds = (memberOf || []).map((b: any) => b.bloc_id);
       setMyBlocs(allBlocs?.filter((b: any) => myIds.includes(b.id)) || []);
 
-      if (myIds.length > 0) {
-        try {
-          const result = await getResolutions(myIds); // delegate mode — pass bloc IDs
-          setResolutions(result.resolutions || []);
-          restoreLastResolution(result.resolutions || []);
-        } catch (e) {
-          console.error('Delegate resolution fetch failed:', e);
-        }
-      } else {
-        setResolutions([]);
+      // Fetch all committee resolutions — editable ones (bloc member, draft)
+      // and read-only submitted/locked ones visible to all committee members.
+      try {
+        const result = await getResolutions(myIds.length > 0 ? myIds : undefined);
+        setResolutions(result.resolutions || []);
+        restoreLastResolution(result.resolutions || []);
+      } catch (e) {
+        console.error('Delegate resolution fetch failed:', e);
       }
     }
   };
@@ -520,10 +518,10 @@ export default function Resolutions() {
   };
 
   const handleCreateResolution = async () => {
-    if (!newResTitle.trim()) return;
+    if (!newResTitle.trim() || !selectedBlocId) return;
     const init = JSON.stringify([{ id: Date.now().toString(), type:'heading', html:'', text:'', indent:0 }]);
     const { data: res } = await supabase.from('resolutions')
-      .insert([{ title: newResTitle, bloc_id: selectedBlocId ? parseInt(selectedBlocId) : null, committee: profile?.committee, content: init }])
+      .insert([{ title: newResTitle, bloc_id: parseInt(selectedBlocId), committee: profile?.committee, content: init }])
       .select().single();
     if (res) { setResolutions([res, ...resolutions]); openResolution(res); setIsResModal(false); setNewResTitle(''); }
   };
@@ -917,13 +915,15 @@ export default function Resolutions() {
   };
 
   // ── Permissions ───────────────────────────────────────────────────────────────
-  // locked = nobody edits (not even chairs)
-  // submitted = only chairs can edit
-  // draft = everyone in the bloc can edit
+  // locked = nobody edits
+  // submitted = chairs only
+  // draft = chairs + delegates who are members of the resolution's bloc
+  //         (or independent resolution with no bloc — open to whole committee)
+  const isInResolutionBloc = !activeRes?.bloc_id || myBlocs.some((b: any) => b.id === activeRes?.bloc_id);
   const canEdit =
     activeRes?.status === 'locked'    ? false :
     activeRes?.status === 'submitted' ? isChair :
-    true; // draft — both chairs and delegates
+    isChair || isInResolutionBloc; // draft
 
   // Delegates only see their own amendments + approved ones
   const visibleAmendments = isChair
@@ -1438,7 +1438,7 @@ export default function Resolutions() {
             <h2>New Resolution</h2>
             <input className="dark-input" style={{ minHeight:48 }} value={newResTitle} onChange={e => setNewResTitle(e.target.value)} placeholder="e.g. Working Paper 1.1" />
             <select className="dark-input" style={{ minHeight:48 }} value={selectedBlocId} onChange={e => setSelectedBlocId(e.target.value)}>
-              <option value="">Independent (no bloc)</option>
+              <option value="">Select Bloc…</option>
               {myBlocs.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
             <div style={{ display:'flex', gap:10, marginTop:6 }}>

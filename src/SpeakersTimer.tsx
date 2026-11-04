@@ -39,12 +39,12 @@ const CircleProgress = ({ ratio, overtime }: { ratio: number; overtime: boolean 
   return (
     <svg width="280" height="280" viewBox="0 0 280 280" style={{ position: 'absolute', inset: 0, transform: 'rotate(-90deg)' }}>
       {/* Track */}
-      <circle cx="140" cy="140" r={RADIUS} fill="none" stroke="rgba(0,0,0,0.07)" strokeWidth="8" />
+      <circle cx="140" cy="140" r={RADIUS} fill="none" stroke="rgba(var(--tint),0.07)" strokeWidth="8" />
       {/* Progress */}
       <circle
         cx="140" cy="140" r={RADIUS}
         fill="none"
-        stroke={overtime ? '#DC2626' : '#F07C00'}
+        stroke={overtime ? '#DC2626' : 'var(--accent)'}
         strokeWidth="8"
         strokeLinecap="round"
         strokeDasharray={CIRCUMFERENCE}
@@ -252,27 +252,24 @@ export default function SpeakersTimer() {
   };
 
   return (
-    <div style={{ height: '100vh', display: 'flex', background: 'var(--bg-base)', fontFamily: "'Manrope', sans-serif", overflow: 'hidden' }}>
+    <div style={{ height: '100vh', display: 'flex', background: 'var(--bg-base)', fontFamily:'var(--sans)', overflow: 'hidden' }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
-        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
-
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
         .timer-btn {
           display: flex; align-items: center; justify-content: center; gap: 6px;
-          border: none; cursor: pointer; font-family: 'Manrope', sans-serif;
-          font-weight: 700; transition: all 0.15s ease; border-radius: 12px;
+          border: none; cursor: pointer; font-family:var(--sans);
+          font-weight: 500; transition: all 0.15s ease; border-radius: 12px;
         }
         .timer-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
         .preset-chip {
-          padding: 6px 14px; border-radius: 99px; font-size: 12px; font-weight: 700;
-          border: 1.5px solid rgba(0,0,0,0.10); background: var(--bg-surface);
-          color: var(--text-secondary); cursor: pointer; transition: all 0.12s; font-family: 'Manrope', sans-serif;
+          padding: 6px 14px; border-radius: 99px; font-size: 12px; font-weight: 500;
+          border: 1.5px solid rgba(var(--tint),0.10); background: var(--bg-surface);
+          color: var(--text-secondary); cursor: pointer; transition: all 0.12s; font-family:var(--sans);
         }
-        .preset-chip:hover { border-color: rgba(240,124,0,0.4); color: #E07000; background: rgba(240,124,0,0.06); }
-        .preset-chip.active { background: #F07C00; color: #fff; border-color: #F07C00; box-shadow: 0 3px 10px rgba(240,124,0,0.30); }
+        .preset-chip:hover { border-color: rgba(34,164,87,0.4); color: var(--accent-2); background: rgba(34,164,87,0.06); }
+        .preset-chip.active { background: var(--accent); color: #fff; border-color: var(--accent); box-shadow: 0 3px 10px rgba(34,164,87,0.30); }
 
         .delegate-row {
           display: flex; align-items: center; gap: 10px;
@@ -282,7 +279,7 @@ export default function SpeakersTimer() {
           position: relative;
         }
         .delegate-row:hover { background: var(--bg-elevated); border-color: var(--border); }
-        .delegate-row.is-active { background: rgba(240,124,0,0.08); border-color: rgba(240,124,0,0.25); }
+        .delegate-row.is-active { background: rgba(34,164,87,0.08); border-color: rgba(34,164,87,0.25); }
         .delegate-row.is-spoken { opacity: 0.55; }
         .delegate-row.is-spoken:hover { opacity: 0.75; }
 
@@ -296,20 +293,20 @@ export default function SpeakersTimer() {
 
         .add-input {
           flex: 1; border: 1.5px solid var(--border-strong); border-radius: 10px;
-          padding: 10px 12px; font-size: 13px; font-weight: 600;
-          font-family: 'Manrope', sans-serif; background: var(--bg-elevated);
+          padding: 10px 12px; font-size: 13px; font-weight: 500;
+          font-family:var(--sans); background: var(--bg-elevated);
           color: var(--text-primary); outline: none; transition: all 0.15s;
         }
-        .add-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(240,124,0,0.10); background: var(--bg-elevated); }
+        .add-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(34,164,87,0.10); background: var(--bg-elevated); }
         .add-input::placeholder { color: var(--text-muted); font-weight: 500; }
 
         .custom-time-input {
           width: 80px; border: 1.5px solid var(--border-strong); border-radius: 8px;
-          padding: 6px 10px; font-size: 12px; font-weight: 700;
-          font-family: 'JetBrains Mono', monospace; background: var(--bg-elevated);
+          padding: 6px 10px; font-size: 12px; font-weight: 500;
+          font-family:var(--mono); background: var(--bg-elevated);
           color: var(--text-primary); outline: none; text-align: center; transition: all 0.15s;
         }
-        .custom-time-input:focus { border-color: #F07C00; box-shadow: 0 0 0 2px rgba(240,124,0,0.12); }
+        .custom-time-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(34,164,87,0.12); }
         .custom-time-input::placeholder { color: var(--text-muted); }
 
         @keyframes pulse-ring {
@@ -339,18 +336,18 @@ export default function SpeakersTimer() {
       }}>
         {/* Header */}
         <div style={{ marginBottom: 20 }}>
-          <p style={{ fontSize: '9.5px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '2.2px', color: '#F07C00', marginBottom: 4 }}>
+          <p style={{ fontSize: '9.5px', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '2.2px', color: 'var(--accent)', marginBottom: 4 }}>
             Speakers List
           </p>
-          <h2 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.4px' }}>
+          <h2 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--text-primary)', letterSpacing: '-0.4px' }}>
             Delegates
           </h2>
           {/* Stats row */}
           <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: '#22C55E', background: 'rgba(34,197,94,0.10)', borderRadius: 99, padding: '3px 10px' }}>
+            <span style={{ fontSize: 11, fontWeight: 500, color: '#22C55E', background: 'rgba(34,197,94,0.10)', borderRadius: 99, padding: '3px 10px' }}>
               {spokeCount} spoke
             </span>
-            <span style={{ fontSize: 11, fontWeight: 700, color: '#F07C00', background: 'rgba(240,124,0,0.10)', borderRadius: 99, padding: '3px 10px' }}>
+            <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)', background: 'rgba(34,164,87,0.10)', borderRadius: 99, padding: '3px 10px' }}>
               {remainingCount} remaining
             </span>
           </div>
@@ -372,9 +369,9 @@ export default function SpeakersTimer() {
             disabled={!newName.trim()}
             style={{
               width: 38, height: 38, flexShrink: 0,
-              background: newName.trim() ? '#F07C00' : 'rgba(0,0,0,0.06)',
-              color: newName.trim() ? '#fff' : '#A1A1AA',
-              boxShadow: newName.trim() ? '0 3px 10px rgba(240,124,0,0.28)' : 'none',
+              background: newName.trim() ? 'var(--accent)' : 'rgba(var(--tint),0.06)',
+              color: newName.trim() ? '#fff' : 'var(--text-muted)',
+              boxShadow: newName.trim() ? '0 3px 10px rgba(34,164,87,0.28)' : 'none',
             }}
           ><IconPlus /></button>
         </div>
@@ -384,8 +381,8 @@ export default function SpeakersTimer() {
           {delegates.length === 0 && (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', paddingBottom: 40 }}>
               <div style={{ fontSize: 32, marginBottom: 10, opacity: 0.3 }}>🎤</div>
-              <p style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 600, textAlign: 'center' }}>No delegates yet</p>
-              <p style={{ fontSize: 11, color: '#C4C4C4', fontWeight: 500, textAlign: 'center', marginTop: 4 }}>Add delegation names above</p>
+              <p style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 500, textAlign: 'center' }}>No delegates yet</p>
+              <p style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 500, textAlign: 'center', marginTop: 4 }}>Add delegation names above</p>
             </div>
           )}
           {delegates.map((d, i) => (
@@ -398,7 +395,7 @@ export default function SpeakersTimer() {
               <span style={{ color: 'var(--text-muted)', flexShrink: 0, cursor: 'grab' }}><IconGrip /></span>
 
               {/* Order number */}
-              <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--text-muted)', width: 16, textAlign: 'center', flexShrink: 0 }}>{i + 1}</span>
+              <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', width: 16, textAlign: 'center', flexShrink: 0 }}>{i + 1}</span>
 
               {/* Checkmark */}
               <div
@@ -417,7 +414,7 @@ export default function SpeakersTimer() {
                   onBlur={commitEdit}
                   onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') setEditingId(null); }}
                   onClick={e => e.stopPropagation()}
-                  style={{ flex: 1, border: '1.5px solid #F07C00', borderRadius: 6, padding: '3px 7px', fontSize: 13, fontWeight: 600, fontFamily: 'Manrope, sans-serif', outline: 'none', background: '#fff', color: 'var(--text-primary)' }}
+                  style={{ flex: 1, border: '1.5px solid var(--accent)', borderRadius: 6, padding: '3px 7px', fontSize: 13, fontWeight: 500, fontFamily:'var(--sans)', outline: 'none', background: 'var(--bg-3)', color: 'var(--text-primary)' }}
                 />
               ) : (
                 <span
@@ -437,7 +434,7 @@ export default function SpeakersTimer() {
 
               {/* Speaking indicator */}
               {d.id === activeId && !d.spoken && (
-                <span style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px', color: 'var(--accent)', background: 'var(--accent-soft)', borderRadius: 99, padding: '2px 7px', flexShrink: 0 }}>Now</span>
+                <span style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '1px', color: 'var(--accent)', background: 'var(--accent-soft)', borderRadius: 99, padding: '2px 7px', flexShrink: 0 }}>Now</span>
               )}
 
               {/* Remove btn */}
@@ -454,18 +451,18 @@ export default function SpeakersTimer() {
 
         {/* Footer actions */}
         {delegates.length > 0 && (
-          <div style={{ borderTop: '1px solid rgba(0,0,0,0.07)', paddingTop: 12, marginTop: 10, display: 'flex', gap: 6 }}>
+          <div style={{ borderTop: '1px solid rgba(var(--tint),0.07)', paddingTop: 12, marginTop: 10, display: 'flex', gap: 6 }}>
             <button
               className="timer-btn"
               onClick={shuffle}
-              style={{ flex: 1, padding: '9px 0', fontSize: 11, background: 'var(--bg-surface)', color: 'var(--text-secondary)', border: '1px solid rgba(0,0,0,0.08)' }}
+              style={{ flex: 1, padding: '9px 0', fontSize: 11, background: 'var(--bg-surface)', color: 'var(--text-secondary)', border: '1px solid rgba(var(--tint),0.08)' }}
             >
               <IconShuffle /> Shuffle
             </button>
             <button
               className="timer-btn"
               onClick={resetSpoken}
-              style={{ flex: 1, padding: '9px 0', fontSize: 11, background: 'var(--bg-surface)', color: 'var(--text-secondary)', border: '1px solid rgba(0,0,0,0.08)' }}
+              style={{ flex: 1, padding: '9px 0', fontSize: 11, background: 'var(--bg-surface)', color: 'var(--text-secondary)', border: '1px solid rgba(var(--tint),0.08)' }}
             >
               <IconClearAll /> Reset All
             </button>
@@ -482,8 +479,8 @@ export default function SpeakersTimer() {
           background: overtime
             ? 'radial-gradient(ellipse at 50% 40%, rgba(220,38,38,0.07) 0%, transparent 65%)'
             : running
-              ? 'radial-gradient(ellipse at 50% 40%, rgba(240,124,0,0.08) 0%, transparent 65%)'
-              : 'radial-gradient(ellipse at 50% 40%, rgba(240,124,0,0.04) 0%, transparent 65%)',
+              ? 'radial-gradient(ellipse at 50% 40%, rgba(34,164,87,0.08) 0%, transparent 65%)'
+              : 'radial-gradient(ellipse at 50% 40%, rgba(34,164,87,0.04) 0%, transparent 65%)',
           transition: 'background 0.6s ease',
         }} />
 
@@ -495,19 +492,19 @@ export default function SpeakersTimer() {
               background: 'var(--bg-elevated)', backdropFilter: 'blur(12px)',
               border: '1px solid var(--accent-mid)', borderRadius: 99,
               padding: '8px 20px',
-              boxShadow: '0 4px 16px rgba(240,124,0,0.12)',
+              boxShadow: '0 4px 16px rgba(34,164,87,0.12)',
             }}>
               {/* Pulsing dot */}
               {running && (
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: overtime ? '#DC2626' : '#F07C00', display: 'block', flexShrink: 0, animation: 'liveDot 1.2s ease infinite' }} />
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: overtime ? '#DC2626' : 'var(--accent)', display: 'block', flexShrink: 0, animation: 'liveDot 1.2s ease infinite' }} />
               )}
-              <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.2px' }}>
+              <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', letterSpacing: '-0.2px' }}>
                 {active.name}
               </span>
-              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>speaking</span>
+              <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-muted)' }}>speaking</span>
             </div>
           ) : (
-            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)' }}>
+            <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-muted)' }}>
               {delegates.length === 0 ? 'Add delegates to get started' : 'Select a delegate to begin'}
             </p>
           )}
@@ -530,15 +527,15 @@ export default function SpeakersTimer() {
           {/* Time display */}
           <div style={{ textAlign: 'center', zIndex: 1 }}>
             <div style={{
-              fontFamily: "'JetBrains Mono', monospace",
-              fontSize: 54, fontWeight: 700,
+              fontFamily:'var(--mono)',
+              fontSize: 54, fontWeight: 500,
               color: overtime ? '#DC2626' : 'var(--text-primary)',
               letterSpacing: '-2px', lineHeight: 1,
               transition: 'color 0.3s',
             }}>
               {formatTime(timeLeft)}
             </div>
-            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '2px', color: overtime ? '#DC2626' : 'var(--text-muted)', marginTop: 6, transition: 'color 0.3s' }}>
+            <div style={{ fontSize: 11, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '2px', color: overtime ? '#DC2626' : 'var(--text-muted)', marginTop: 6, transition: 'color 0.3s' }}>
               {overtime ? 'Overtime' : running ? 'Speaking' : 'Ready'}
             </div>
           </div>
@@ -550,7 +547,7 @@ export default function SpeakersTimer() {
           <button
             className="timer-btn"
             onClick={resetTimer}
-            style={{ width: 44, height: 44, background: 'var(--bg-elevated)', border: '1px solid rgba(0,0,0,0.10)', color: 'var(--text-secondary)', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}
+            style={{ width: 44, height: 44, background: 'var(--bg-elevated)', border: '1px solid rgba(var(--tint),0.10)', color: 'var(--text-secondary)', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}
             title="Reset timer"
           ><IconReset /></button>
 
@@ -561,10 +558,10 @@ export default function SpeakersTimer() {
             disabled={!activeId}
             style={{
               width: 68, height: 68,
-              background: activeId ? '#F07C00' : 'rgba(0,0,0,0.07)',
-              color: activeId ? '#fff' : '#A1A1AA',
+              background: activeId ? 'var(--accent)' : 'rgba(var(--tint),0.07)',
+              color: activeId ? '#fff' : 'var(--text-muted)',
               fontSize: 14,
-              boxShadow: activeId ? '0 6px 20px rgba(240,124,0,0.35)' : 'none',
+              boxShadow: activeId ? '0 6px 20px rgba(34,164,87,0.35)' : 'none',
               borderRadius: 20,
             }}
           >
@@ -576,14 +573,14 @@ export default function SpeakersTimer() {
             className="timer-btn"
             onClick={markSpokenAndNext}
             disabled={!activeId}
-            style={{ width: 44, height: 44, background: 'var(--bg-elevated)', border: '1px solid rgba(0,0,0,0.10)', color: 'var(--text-secondary)', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}
+            style={{ width: 44, height: 44, background: 'var(--bg-elevated)', border: '1px solid rgba(var(--tint),0.10)', color: 'var(--text-secondary)', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}
             title="Mark spoken & next"
           ><IconNext /></button>
         </div>
 
         {/* ── Duration presets ── */}
         <div style={{ zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-          <p style={{ fontSize: '9.5px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '2px', color: 'var(--text-muted)' }}>Speech Duration</p>
+          <p style={{ fontSize: '9.5px', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '2px', color: 'var(--text-muted)' }}>Speech Duration</p>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center' }}>
             {PRESETS.map(p => (
               <button
@@ -616,13 +613,13 @@ export default function SpeakersTimer() {
         {delegates.length > 0 && (
           <div style={{ zIndex: 1, width: '100%', maxWidth: 360 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-              <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px', color: 'var(--text-muted)' }}>List Progress</span>
-              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)' }}>{spokeCount} / {delegates.length}</span>
+              <span style={{ fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '1.5px', color: 'var(--text-muted)' }}>List Progress</span>
+              <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-primary)' }}>{spokeCount} / {delegates.length}</span>
             </div>
             <div style={{ height: 5, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>
               <div style={{
                 height: '100%', borderRadius: 99,
-                background: delegates.length > 0 && spokeCount === delegates.length ? '#22C55E' : '#F07C00',
+                background: delegates.length > 0 && spokeCount === delegates.length ? '#22C55E' : 'var(--accent)',
                 width: `${delegates.length > 0 ? (spokeCount / delegates.length) * 100 : 0}%`,
                 transition: 'width 0.4s ease, background 0.3s',
               }} />

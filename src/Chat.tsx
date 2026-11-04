@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from './api';
 import { useAuth } from './AuthContext';
 import { subscribeToMessagePoll, triggerImmediatePoll } from './committeeApi';
+import { pingCommittee } from './live';
 
 const IconGlobe   = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>;
 const IconLock    = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>;
@@ -223,6 +224,7 @@ export default function Chat() {
 
     try {
       await supabase.from('messages').insert([{ sender_id: authUser?.id, content, recipient_group: activeRoom, reply_to: replyToId }]);
+      pingCommittee();
       await pollForMessages();
     } finally {
       setIsSending(false);
@@ -271,7 +273,7 @@ export default function Chat() {
         items.push(
           <div key={`sep-${i}`} style={{ display:'flex', alignItems:'center', gap:12, margin:'16px 0', flexShrink:0 }}>
             <div style={{ flex:1, height:1, background:'var(--border)' }} />
-            <span style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', letterSpacing:'1px', whiteSpace:'nowrap' }}>
+            <span style={{ fontSize:11, fontWeight:500, color:'var(--text-muted)', letterSpacing:'1px', whiteSpace:'nowrap' }}>
               {formatDateSeparator(m.timestamp || m.created_at)}
             </span>
             <div style={{ flex:1, height:1, background:'var(--border)' }} />
@@ -393,21 +395,20 @@ export default function Chat() {
   return (
     <div style={{ height:'100vh', display:'flex', flexDirection:'column', padding:'32px 32px 24px', gap:'20px', boxSizing:'border-box' }} className="chat-page-wrap">
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
         .chat-shell { flex:1; display:flex; border-radius:20px; overflow:hidden; border:1px solid var(--border); box-shadow:var(--shadow-md); background:var(--bg-surface); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); min-height:0; }
         .chat-sidebar-inner { width:260px; flex-shrink:0; background:var(--bg-sidebar); border-right:1px solid var(--border); display:flex; flex-direction:column; padding:24px 16px; overflow-y:auto; }
         .chat-main-inner { flex:1; display:flex; flex-direction:column; background:var(--bg-base); min-width:0; }
-        .ch-btn { display:flex; align-items:center; gap:9px; padding:9px 12px; border-radius:10px; cursor:pointer; font-size:13px; font-weight:600; transition:all 0.12s; margin-bottom:2px; border:1px solid transparent; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; position:relative; }
+        .ch-btn { display:flex; align-items:center; gap:9px; padding:9px 12px; border-radius:10px; cursor:pointer; font-size:13px; font-weight:500; transition:all 0.12s; margin-bottom:2px; border:1px solid transparent; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; position:relative; }
         .ch-btn.active { background:var(--accent-soft); color:var(--accent); border-color:var(--accent-mid); }
         .ch-btn.inactive { color:var(--text-secondary); background:transparent; }
         .ch-btn.inactive:hover { background:var(--bg-surface); color:var(--text-primary); }
-        .ch-btn .unread-dot { position:absolute; right:10px; top:50%; transform:translateY(-50%); min-width:18px; height:18px; border-radius:99px; background:var(--accent); color:#fff; font-size:9px; font-weight:800; display:flex; align-items:center; justify-content:center; padding:0 4px; }
+        .ch-btn .unread-dot { position:absolute; right:10px; top:50%; transform:translateY(-50%); min-width:18px; height:18px; border-radius:99px; background:var(--accent); color:#fff; font-size:9px; font-weight:600; display:flex; align-items:center; justify-content:center; padding:0 4px; }
         .msg-wrap { display:flex; flex-direction:column; margin-bottom:16px; max-width:72%; }
         .msg-wrap.me { align-self:flex-end; align-items:flex-end; }
         .msg-wrap.them { align-self:flex-start; align-items:flex-start; }
-        .msg-sender { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px; color:var(--text-muted); }
-        .msg-bubble { padding:10px 16px; border-radius:14px; font-size:14px; line-height:1.5; font-family:'Manrope',sans-serif; word-break:break-word; overflow-wrap:break-word; }
-        .me .msg-bubble { background:var(--accent); color:#fff; border-bottom-right-radius:4px; box-shadow:0 2px 8px rgba(240,124,0,0.20); }
+        .msg-sender { font-size:10px; font-weight:500; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px; color:var(--text-muted); }
+        .msg-bubble { padding:10px 16px; border-radius:14px; font-size:14px; line-height:1.5; font-family:var(--sans); word-break:break-word; overflow-wrap:break-word; }
+        .me .msg-bubble { background:var(--accent); color:#fff; border-bottom-right-radius:4px; box-shadow:0 2px 8px rgba(34,164,87,0.20); }
         .them .msg-bubble { background:var(--bg-elevated); color:var(--text-primary); border-bottom-left-radius:4px; border:1px solid var(--border); box-shadow:var(--shadow-sm); }
         .msg-sending { opacity:0.6; animation:msgSendPulse 1.1s ease-in-out infinite; }
         @keyframes msgSendPulse { 0%,100% { opacity:0.6; } 50% { opacity:0.95; } }
@@ -419,15 +420,15 @@ export default function Chat() {
         .plus-btn-sm { width:24px; height:24px; background:var(--accent-soft); border:1px solid var(--accent-mid); color:var(--accent); border-radius:6px; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:all 0.12s; }
         .plus-btn-sm:hover { background:var(--accent); color:#fff; }
         .sec-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; padding:0 2px; }
-        .sec-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:2px; color:var(--text-muted); }
-        .lock-banner { display:flex; align-items:center; gap:8px; background:rgba(220,38,38,0.07); border-bottom:1px solid rgba(220,38,38,0.18); padding:10px 20px; font-size:12px; font-weight:700; color:#DC2626; flex-shrink:0; }
-        .lock-chip { font-size:9px; font-weight:700; background:rgba(220,38,38,0.10); color:#DC2626; padding:1px 6px; border-radius:99px; flex-shrink:0; }
+        .sec-label { font-size:10px; font-weight:500; text-transform:uppercase; letter-spacing:2px; color:var(--text-muted); }
+        .lock-banner { display:flex; align-items:center; gap:8px; background:rgba(220,38,38,0.07); border-bottom:1px solid rgba(220,38,38,0.18); padding:10px 20px; font-size:12px; font-weight:500; color:#DC2626; flex-shrink:0; }
+        .lock-chip { font-size:9px; font-weight:500; background:rgba(220,38,38,0.10); color:#DC2626; padding:1px 6px; border-radius:99px; flex-shrink:0; }
 
         /* ── Reply styles ── */
         .reply-preview { border-left:3px solid var(--accent); border-radius:8px; padding:6px 10px; margin-bottom:4px; max-width:100%; overflow:hidden; }
-        .reply-me { background:rgba(240,124,0,0.15); }
+        .reply-me { background:rgba(34,164,87,0.15); }
         .reply-them { background:var(--bg-surface); border-color:var(--text-muted); }
-        .reply-preview-author { display:block; font-size:10px; font-weight:800; color:var(--accent); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .reply-preview-author { display:block; font-size:10px; font-weight:600; color:var(--accent); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .reply-them .reply-preview-author { color:var(--text-secondary); }
         .reply-preview-text { display:block; font-size:12px; color:var(--text-secondary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:500; }
         .reply-btn { background:var(--bg-elevated); border:1px solid var(--border); border-radius:8px; width:28px; height:28px; display:flex; align-items:center; justify-content:center; cursor:pointer; color:var(--text-muted); flex-shrink:0; transition:all 0.12s; opacity:0; animation:replyBtnShow 0.1s ease forwards; }
@@ -437,7 +438,7 @@ export default function Chat() {
         /* ── Reply-to bar above input ── */
         .reply-bar { display:flex; align-items:center; gap:10px; padding:8px 18px; background:var(--bg-surface); border-top:1px solid var(--border); font-size:12px; flex-shrink:0; }
         .reply-bar-inner { flex:1; min-width:0; border-left:3px solid var(--accent); padding-left:8px; }
-        .reply-bar-author { font-weight:800; font-size:11px; color:var(--accent); letter-spacing:0.5px; margin-bottom:2px; }
+        .reply-bar-author { font-weight:600; font-size:11px; color:var(--accent); letter-spacing:0.5px; margin-bottom:2px; }
         .reply-bar-text { color:var(--text-secondary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:500; }
         .reply-bar-close { background:transparent; border:none; cursor:pointer; color:var(--text-muted); display:flex; align-items:center; padding:4px; border-radius:6px; flex-shrink:0; }
         .reply-bar-close:hover { color:var(--text-primary); background:var(--bg-elevated); }
@@ -461,7 +462,7 @@ export default function Chat() {
             display:flex; align-items:center; gap:8px;
             padding:8px 12px;
             background:var(--bg-elevated); border:1px solid var(--border); border-radius:10px;
-            cursor:pointer; font-size:13px; font-weight:600; color:var(--text-primary);
+            cursor:pointer; font-size:13px; font-weight:500; color:var(--text-primary);
             flex-shrink:0;
             /* prevent any tap highlight flash */
             -webkit-tap-highlight-color: transparent;
@@ -522,7 +523,7 @@ export default function Chat() {
       <div className="chat-page-header" style={{ display:'flex', justifyContent:'space-between', alignItems:'center', flexShrink:0 }}>
         <div>
           <h1 className="delegation-brand">Communications</h1>
-          <p style={{ color:'var(--accent)', fontWeight:600, fontSize:'12px', marginTop:'4px' }}>{profile?.committee} Network</p>
+          <p style={{ color:'var(--accent)', fontWeight:500, fontSize:'12px', marginTop:'4px' }}>{profile?.committee} Network</p>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
           <div
@@ -530,7 +531,7 @@ export default function Chat() {
             style={{ display:'flex', alignItems:'center', gap:6, background:'var(--bg-elevated)', border:'1px solid var(--border)', borderRadius:99, padding:'5px 11px' }}
           >
             <div style={{ width:7, height:7, borderRadius:'50%', background:'#22C55E', boxShadow:'0 0 0 3px rgba(34,197,94,0.15)' }} />
-            <span style={{ fontSize:11, fontWeight:600, color:'var(--text-muted)' }}>Synced</span>
+            <span style={{ fontSize:11, fontWeight:500, color:'var(--text-muted)' }}>Synced</span>
           </div>
           <button
             onClick={toggleSound}
@@ -558,14 +559,14 @@ export default function Chat() {
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
               {Array.from(unreadCounts.values()).reduce((a, b) => a + b, 0) > 0 && (
-                <span style={{ minWidth:16, height:16, borderRadius:99, background:'var(--accent)', color:'#fff', fontSize:9, fontWeight:800, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 4px' }}>
+                <span style={{ minWidth:16, height:16, borderRadius:99, background:'var(--accent)', color:'#fff', fontSize:9, fontWeight:600, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 4px' }}>
                   {Array.from(unreadCounts.values()).reduce((a, b) => a + b, 0)}
                 </span>
               )}
             </button>
-            <h2 style={{ fontSize:'15px', fontWeight:700, color:'var(--text-primary)', margin:0, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{activeRoomName}</h2>
+            <h2 style={{ fontSize:'15px', fontWeight:500, color:'var(--text-primary)', margin:0, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{activeRoomName}</h2>
             {lockedRooms.has(activeRoom) && (
-              <span style={{ fontSize:10, fontWeight:800, color:'#DC2626', background:'rgba(220,38,38,0.08)', border:'1px solid rgba(220,38,38,0.20)', borderRadius:99, padding:'3px 10px', letterSpacing:'1px', textTransform:'uppercase' }}>Paused</span>
+              <span style={{ fontSize:10, fontWeight:600, color:'#DC2626', background:'rgba(220,38,38,0.08)', border:'1px solid rgba(220,38,38,0.20)', borderRadius:99, padding:'3px 10px', letterSpacing:'1px', textTransform:'uppercase' }}>Paused</span>
             )}
           </div>
 
@@ -599,14 +600,14 @@ export default function Chat() {
           <form onSubmit={sendMessage} style={{ padding:'14px 18px', borderTop:'1px solid var(--border)', background:'var(--bg-elevated)', display:'flex', gap:'10px', alignItems:'center', flexShrink:0 }}>
             <input
               ref={inputRef}
-              style={{ flex:1, background:'var(--bg-input)', border:'1px solid var(--border-strong)', color:'var(--text-primary)', padding:'12px 16px', borderRadius:'12px', fontSize:'14px', fontFamily:'Manrope,sans-serif', outline:'none', transition:'border-color 0.15s', marginBottom:0, opacity: isRoomLocked ? 0.5 : 1 }}
+              style={{ flex:1, background:'var(--bg-input)', border:'1px solid var(--border-strong)', color:'var(--text-primary)', padding:'12px 16px', borderRadius:'12px', fontSize:'14px', fontFamily:'var(--sans)', outline:'none', transition:'border-color 0.15s', marginBottom:0, opacity: isRoomLocked ? 0.5 : 1 }}
               value={input} onChange={e => setInput(e.target.value)}
               placeholder={isRoomLocked ? 'Chat paused by Chair…' : `Message ${activeRoomName}…`}
               disabled={isRoomLocked}
               onFocus={e => e.currentTarget.style.borderColor='var(--accent)'}
               onBlur={e => e.currentTarget.style.borderColor='var(--border-strong)'}
             />
-            <button type="submit" disabled={isRoomLocked} style={{ background:'var(--accent)', border:'none', color:'#fff', width:'44px', height:'44px', borderRadius:'12px', cursor: isRoomLocked ? 'not-allowed' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, boxShadow:'0 2px 8px rgba(240,124,0,0.25)', opacity: isRoomLocked ? 0.4 : 1 }}>
+            <button type="submit" disabled={isRoomLocked} style={{ background:'var(--accent)', border:'none', color:'#fff', width:'44px', height:'44px', borderRadius:'12px', cursor: isRoomLocked ? 'not-allowed' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, boxShadow:'0 2px 8px rgba(34,164,87,0.25)', opacity: isRoomLocked ? 0.4 : 1 }}>
               <IconSend />
             </button>
           </form>
@@ -624,7 +625,7 @@ export default function Chat() {
         <div className={`mobile-drawer${mobileSidebarOpen ? ' open' : ''}`}>
           {/* Drawer header */}
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20, flexShrink:0 }}>
-            <span style={{ fontSize:13, fontWeight:800, color:'var(--text-primary)' }}>Channels</span>
+            <span style={{ fontSize:13, fontWeight:600, color:'var(--text-primary)' }}>Channels</span>
             <button
               onClick={() => setMobileSidebarOpen(false)}
               style={{ background:'transparent', border:'none', cursor:'pointer', color:'var(--text-muted)', padding:4, display:'flex', borderRadius:6, WebkitTapHighlightColor:'transparent' }}
@@ -639,7 +640,7 @@ export default function Chat() {
           {/* Footer */}
           <div style={{ marginTop:'auto', paddingTop:20, borderTop:'1px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
             <div>
-              <p style={{ fontSize:11, fontWeight:700, color:'var(--accent)', textTransform:'uppercase', letterSpacing:'1px' }}>{profile?.committee}</p>
+              <p style={{ fontSize:11, fontWeight:500, color:'var(--accent)', textTransform:'uppercase', letterSpacing:'1px' }}>{profile?.committee}</p>
               <p style={{ fontSize:11, color:'var(--text-muted)', fontWeight:500, marginTop:2 }}>{profile?.delegation || profile?.role}</p>
             </div>
             <button
@@ -660,11 +661,11 @@ export default function Chat() {
             <div style={{ flex:1, overflowY:'auto', border:'1px solid var(--border)', borderRadius:'12px' }}>
               {committeeUsers.filter((u: any) => u.id !== authUser?.id).map((u: any) => (
                 <div key={u.id} onClick={() => startDM(u)}
-                  style={{ padding:'13px 16px', cursor:'pointer', borderBottom:'1px solid var(--border)', fontSize:'13px', fontWeight:600, display:'flex', alignItems:'center', gap:'10px', color:'var(--text-primary)', transition:'background 0.1s' }}
+                  style={{ padding:'13px 16px', cursor:'pointer', borderBottom:'1px solid var(--border)', fontSize:'13px', fontWeight:500, display:'flex', alignItems:'center', gap:'10px', color:'var(--text-primary)', transition:'background 0.1s' }}
                   onMouseEnter={e => (e.currentTarget as HTMLElement).style.background='var(--accent-soft)'}
                   onMouseLeave={e => (e.currentTarget as HTMLElement).style.background='transparent'}
                 >
-                  <span style={{ fontSize:'10px', fontWeight:700, background: u.role !== 'Delegate' ? 'var(--accent-soft)' : 'var(--bg-surface)', color: u.role !== 'Delegate' ? 'var(--accent)' : 'var(--text-muted)', padding:'2px 8px', borderRadius:'99px', textTransform:'uppercase', letterSpacing:'0.5px', flexShrink:0 }}>{u.role}</span>
+                  <span style={{ fontSize:'10px', fontWeight:500, background: u.role !== 'Delegate' ? 'var(--accent-soft)' : 'var(--bg-surface)', color: u.role !== 'Delegate' ? 'var(--accent)' : 'var(--text-muted)', padding:'2px 8px', borderRadius:'99px', textTransform:'uppercase', letterSpacing:'0.5px', flexShrink:0 }}>{u.role}</span>
                   {u.delegation || u.committee}
                 </div>
               ))}
@@ -684,7 +685,7 @@ export default function Chat() {
               {committeeUsers.filter((u: any) => u.role === 'Delegate' && u.id !== authUser?.id).map((u: any) => (
                 <div key={u.id}
                   onClick={() => setSelectedUsers(prev => prev.includes(u.id) ? prev.filter(i => i !== u.id) : [...prev, u.id])}
-                  style={{ padding:'11px 16px', cursor:'pointer', borderBottom:'1px solid var(--border)', fontSize:'13px', fontWeight:600, background: selectedUsers.includes(u.id) ? 'var(--accent-soft)' : 'transparent', color: selectedUsers.includes(u.id) ? 'var(--accent)' : 'var(--text-primary)', display:'flex', alignItems:'center', gap:'10px', transition:'all 0.1s' }}
+                  style={{ padding:'11px 16px', cursor:'pointer', borderBottom:'1px solid var(--border)', fontSize:'13px', fontWeight:500, background: selectedUsers.includes(u.id) ? 'var(--accent-soft)' : 'transparent', color: selectedUsers.includes(u.id) ? 'var(--accent)' : 'var(--text-primary)', display:'flex', alignItems:'center', gap:'10px', transition:'all 0.1s' }}
                 >
                   <div style={{ width:'16px', height:'16px', borderRadius:'4px', border:`2px solid ${selectedUsers.includes(u.id)?'var(--accent)':'var(--border-strong)'}`, background: selectedUsers.includes(u.id)?'var(--accent)':'transparent', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
                     {selectedUsers.includes(u.id) && <svg width="9" height="9" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}

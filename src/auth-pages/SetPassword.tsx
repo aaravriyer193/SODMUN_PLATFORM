@@ -10,6 +10,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../api';
+import AuthLayout from './AuthLayout';
 
 const STORAGE_KEY = 'sodmun_invite_tokens';
 
@@ -144,15 +145,12 @@ export default function SetPassword() {
     setStatus('done');
 
     setTimeout(() => {
-      window.location.href = 'https://app.sodmun.com/login?welcome=true';
+      window.location.href = '/login?welcome=true';
     }, 2000);
   };
 
   return (
-    <div style={styles.page}>
-      <div style={styles.card}>
-        <div style={styles.logo}>SODMUN</div>
-        <div style={styles.bar} />
+    <AuthLayout photo="atrium">
 
         {ready === null && (
           <p style={styles.sub}>Verifying your link…</p>
@@ -162,7 +160,7 @@ export default function SetPassword() {
           <>
             <h1 style={styles.title}>Link expired</h1>
             <p style={styles.sub}>{errorMsg}</p>
-            <a href="https://app.sodmun.com/forgot" style={styles.link}>
+            <a href="/forgot" style={styles.link}>
               Request a new link →
             </a>
           </>
@@ -174,24 +172,30 @@ export default function SetPassword() {
             <p style={styles.sub}>Choose a password you'll remember. You'll use this every time you log in.</p>
 
             <form onSubmit={handleSubmit} style={styles.form}>
-              <input
-                type="password"
-                placeholder="Password (min 8 characters)"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                style={styles.input}
-                autoComplete="new-password"
-                required
-              />
-              <input
-                type="password"
-                placeholder="Confirm password"
-                value={confirm}
-                onChange={e => setConfirm(e.target.value)}
-                style={styles.input}
-                autoComplete="new-password"
-                required
-              />
+              <label style={styles.field}>
+                <span style={styles.fieldLabel}>New password</span>
+                <input
+                  type="password"
+                  placeholder="At least 8 characters"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  style={styles.input}
+                  autoComplete="new-password"
+                  required
+                />
+              </label>
+              <label style={styles.field}>
+                <span style={styles.fieldLabel}>Confirm password</span>
+                <input
+                  type="password"
+                  placeholder="••••••••"
+                  value={confirm}
+                  onChange={e => setConfirm(e.target.value)}
+                  style={styles.input}
+                  autoComplete="new-password"
+                  required
+                />
+              </label>
               {errorMsg && <p style={styles.error}>{errorMsg}</p>}
               <button
                 type="submit"
@@ -211,40 +215,41 @@ export default function SetPassword() {
             <p style={styles.sub}>Taking you to the platform…</p>
           </>
         )}
-      </div>
-    </div>
+    </AuthLayout>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
+  field: { display:'flex', flexDirection:'column', gap:8, width:'100%' },
+  fieldLabel: { fontSize:12, fontWeight:500, color:'var(--text-secondary)', letterSpacing:'0.01em' },
   page: {
     minHeight: '100vh', width: '100vw',
-    background: 'linear-gradient(135deg, #F5F3EF 0%, #FEF3E6 100%)',
+    background: 'linear-gradient(135deg, var(--bg) 0%, var(--bg-2) 100%)',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    fontFamily: "'Manrope', sans-serif", padding: 20,
+    fontFamily:'var(--sans)', padding: 20,
   },
   card: {
-    background: '#fff', borderRadius: 20,
+    background: 'var(--bg-2)', border:'1px solid var(--border)', borderRadius: 20,
     padding: '48px 44px', width: '100%', maxWidth: 420,
-    boxShadow: '0 8px 40px rgba(0,0,0,0.10)',
+    boxShadow: 'var(--shadow-lg)',
     display: 'flex', flexDirection: 'column', alignItems: 'center',
     textAlign: 'center',
   },
   logo: {
-    fontFamily: "'JetBrains Mono', monospace",
-    fontSize: 13, fontWeight: 700, letterSpacing: 5,
-    color: '#F07C00', marginBottom: 20, textTransform: 'uppercase',
+    fontFamily:'var(--mono)',
+    fontSize: 13, fontWeight: 500, letterSpacing: 5,
+    color: 'var(--accent)', marginBottom: 20, textTransform: 'uppercase',
   },
   bar: {
-    width: 36, height: 3, background: '#F07C00',
+    width: 36, height: 3, background: 'var(--accent)',
     borderRadius: 99, marginBottom: 28,
   },
   title: {
-    fontSize: 24, fontWeight: 800, color: '#18181B',
+    fontSize: 48, fontWeight: 400, color: 'var(--text-primary)',
     letterSpacing: '-0.5px', marginBottom: 10,
   },
   sub: {
-    fontSize: 14, color: '#71717A', fontWeight: 400,
+    fontSize: 14, color: 'var(--text-muted)', fontWeight: 400,
     lineHeight: 1.6, marginBottom: 28,
   },
   form: {
@@ -253,27 +258,26 @@ const styles: Record<string, React.CSSProperties> = {
   },
   input: {
     width: '100%', padding: '13px 16px',
-    border: '1px solid rgba(0,0,0,0.12)',
+    border: '1px solid rgba(var(--tint),0.12)',
     borderRadius: 12, fontSize: 14, fontWeight: 500,
-    fontFamily: "'Manrope', sans-serif",
-    outline: 'none', color: '#18181B', background: '#FAFAF8',
+    fontFamily:'var(--sans)',
+    outline: 'none', color: 'var(--text-primary)', background: 'var(--bg-2)',
   },
   btn: {
     width: '100%', height: 48,
-    background: '#F07C00', color: '#fff',
-    border: 'none', borderRadius: 12,
-    fontSize: 14, fontWeight: 700,
-    fontFamily: "'Manrope', sans-serif",
+    background: 'var(--accent)', color: '#fff',
+    border: 'none', borderRadius: 99,
+    fontSize: 14, fontWeight: 500,
+    fontFamily:'var(--sans)',
     cursor: 'pointer', marginTop: 4,
-    boxShadow: '0 4px 14px rgba(240,124,0,0.28)',
   },
   error: {
     fontSize: 13, color: '#DC2626',
-    fontWeight: 600, margin: '4px 0',
+    fontWeight: 500, margin: '4px 0',
   },
   link: {
-    fontSize: 13, color: '#F07C00',
-    fontWeight: 700, textDecoration: 'none',
+    fontSize: 13, color: 'var(--accent)',
+    fontWeight: 500, textDecoration: 'none',
     marginTop: 8,
   },
   successIcon: {

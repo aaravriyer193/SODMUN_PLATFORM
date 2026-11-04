@@ -5,10 +5,10 @@ export default function Schedule() {
   return (
     <div style={{ padding: '48px 40px', minHeight: '100vh', boxSizing: 'border-box' }}>
       <div style={{ marginBottom: '36px' }}>
-        <p style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '2px', color: 'var(--accent)', marginBottom: '6px' }}>
+        <p style={{ fontSize: '11px', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '2px', color: 'var(--accent)', marginBottom: '6px' }}>
           SODMUN · June 26–28
         </p>
-        <h1 style={{ fontSize: '2.4rem', fontWeight: 800, letterSpacing: '-1px', color: 'var(--text-primary)', lineHeight: 1 }}>
+        <h1 style={{ fontSize: '2.4rem', fontWeight: 600, letterSpacing: '-1px', color: 'var(--text-primary)', lineHeight: 1 }}>
           Conference Schedule
         </h1>
       </div>

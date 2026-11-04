@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { supabase } from './api';
 import { useAuth } from './AuthContext';
 import {
@@ -9,6 +9,7 @@ import {
   submitAmendment, getAmendments, reviewAmendment,
   getBlocks, upsertBlock, deleteBlock, reorderBlocks,
 } from './committeeApi';
+import { joinRoom, liveEnabled, roomId, type LiveHandle } from './live';
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 const IconBold      = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"/><path d="M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"/></svg>;
@@ -44,7 +45,7 @@ function timeAgo(ts: string) {
 }
 
 // ── Delegate color palette for cursors ───────────────────────────────────────
-const CURSOR_COLORS = ['#F07C00','#6366F1','#22C55E','#EC4899','#14B8A6','#F59E0B','#8B5CF6','#EF4444'];
+const CURSOR_COLORS = ['#22a457','#6366F1','#22C55E','#EC4899','#14B8A6','#F59E0B','#8B5CF6','#EF4444'];
 function userColor(uid: string) {
   let h = 0; for (const c of uid) h = (h * 31 + c.charCodeAt(0)) & 0xffffffff;
   return CURSOR_COLORS[Math.abs(h) % CURSOR_COLORS.length];
@@ -65,10 +66,53 @@ const FloatingToolbar = ({ position, onAction }: any) => {
   );
 };
 
+// ── Caret geometry ────────────────────────────────────────────────────────────
+// Character index of the caret inside a block, and the reverse: where on
+// screen a given index sits. Used to share and draw collaborators' carets.
+function caretOffsetIn(el: HTMLElement, node: Node, offset: number): number {
+  const r = document.createRange();
+  r.setStart(el, 0);
+  r.setEnd(node, offset);
+  return r.toString().length;
+}
+
+function caretRectAt(el: HTMLElement, index: number): DOMRect | null {
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let seen = 0;
+  let last: Text | null = null;
+  for (let n = walker.nextNode() as Text | null; n; n = walker.nextNode() as Text | null) {
+    last = n;
+    const len = n.data.length;
+    if (seen + len >= index) {
+      const r = document.createRange();
+      r.setStart(n, Math.max(0, index - seen));
+      r.collapse(true);
+      const rects = r.getClientRects();
+      if (rects.length) return rects[rects.length - 1];
+      // Collapsed ranges at a line wrap can report no rect; measure the next char
+      const end = Math.min(len, index - seen + 1);
+      r.setEnd(n, end);
+      const rr = r.getBoundingClientRect();
+      if (rr.height) return new DOMRect(rr.left, rr.top, 0, rr.height);
+    }
+    seen += len;
+  }
+  if (last) {
+    const r = document.createRange();
+    r.selectNodeContents(last);
+    r.collapse(false);
+    const rect = r.getBoundingClientRect();
+    if (rect.height) return rect;
+  }
+  return null;
+}
+
 // ── Editable block ────────────────────────────────────────────────────────────
 const EditableBlock = ({ block, index, commitBlocks, blocks, handleKeyDown, getPrefix, canEdit, presences, amendmentsOpen }: any) => {
   const editorRef  = useRef<HTMLDivElement>(null);
+  const wrapRef    = useRef<HTMLDivElement>(null);
   const [toolbarPos, setToolbarPos] = useState<any>(null);
+  const [carets, setCarets] = useState<{ userId: string; delegation: string; x: number; y: number; h: number }[]>([]);
 
   useEffect(() => {
     if (editorRef.current && document.activeElement !== editorRef.current) {
@@ -103,8 +147,8 @@ const EditableBlock = ({ block, index, commitBlocks, blocks, handleKeyDown, getP
 
   const handleFormatAction = (action: string) => {
     if (action === 'hilite') {
-      const isH = document.queryCommandValue('backColor') === 'rgba(240, 124, 0, 0.2)';
-      document.execCommand('backColor', false, isH ? 'transparent' : 'rgba(240, 124, 0, 0.2)');
+      const isH = document.queryCommandValue('backColor') === 'rgba(34,164,87, 0.2)';
+      document.execCommand('backColor', false, isH ? 'transparent' : 'rgba(34,164,87, 0.2)');
     } else applyFormat(action);
   };
 
@@ -118,17 +162,40 @@ const EditableBlock = ({ block, index, commitBlocks, blocks, handleKeyDown, getP
   const fontWeight = block.type === 'heading' ? '800' : '400';
   const fontColor  = block.type === 'heading' ? 'var(--accent)' : 'var(--text-primary)';
 
-  // Presence cursors in this block
+  // Presence cursors in this block, placed at each collaborator's caret
   const blockPresences = (presences || []).filter((p: any) => p.blockId === block.id);
+  const presenceKey = blockPresences.map((p: any) => `${p.userId}:${p.offset}`).join('|');
+
+  useLayoutEffect(() => {
+    const el = editorRef.current, wrap = wrapRef.current;
+    if (!el || !wrap || blockPresences.length === 0) { setCarets(c => c.length ? [] : c); return; }
+    const place = () => {
+      const base = wrap.getBoundingClientRect();
+      const fallback = el.getBoundingClientRect();
+      setCarets(blockPresences.map((p: any) => {
+        const rect = typeof p.offset === 'number' ? caretRectAt(el, p.offset) : null;
+        const lineH = parseFloat(getComputedStyle(el).lineHeight) || 24;
+        return {
+          userId: p.userId, delegation: p.delegation,
+          x: (rect ? rect.left : fallback.left) - base.left,
+          y: (rect ? rect.top : fallback.top + 3) - base.top,
+          h: rect?.height || lineH,
+        };
+      }));
+    };
+    place();
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
+  }, [presenceKey, block.html]);
 
   return (
-    <div style={{ display:'flex', alignItems:'flex-start', marginLeft, marginBottom:4, position:'relative', cursor:'text', width:'100%', boxSizing:'border-box' }}
+    <div ref={wrapRef} style={{ display:'flex', alignItems:'flex-start', marginLeft, marginBottom:4, position:'relative', cursor:'text', width:'100%', boxSizing:'border-box' }}
       onClick={() => editorRef.current?.focus()}
     >
       <FloatingToolbar position={toolbarPos} onAction={handleFormatAction} />
 
       {block.type === 'point' && (
-        <div style={{ width:36, paddingTop:3, color:'var(--accent)', fontWeight:800, fontSize:14, flexShrink:0, textAlign:'right', paddingRight:12, userSelect:'none', fontFamily:'Manrope,sans-serif' }}>
+        <div style={{ width:36, paddingTop:3, color:'var(--accent)', fontWeight:600, fontSize:14, flexShrink:0, textAlign:'right', paddingRight:12, userSelect:'none', fontFamily:'var(--sans)' }}>
           {getPrefix(index)}
         </div>
       )}
@@ -140,41 +207,26 @@ const EditableBlock = ({ block, index, commitBlocks, blocks, handleKeyDown, getP
 
       <div ref={editorRef} contentEditable={canEdit} suppressContentEditableWarning
         className={amendmentsOpen ? 'amend-select-mode' : ''}
-        style={{ flex:1, minHeight:'1.6em', padding:'3px 0', fontFamily:'Manrope,sans-serif', fontSize, fontWeight, color:fontColor, lineHeight:block.type==='heading'?1.3:1.7, outline:'none', wordBreak:'break-word', overflowWrap:'break-word', whiteSpace:'pre-wrap', marginBottom:block.type==='heading'?'16px':'0px', letterSpacing:block.type==='heading'?'-0.5px':'0px', textTransform:block.type==='heading'?'uppercase':'none', maxWidth:'100%', boxSizing:'border-box', cursor:canEdit?'text':'default' }}
+        style={{ flex:1, minHeight:'1.6em', padding:'3px 0', fontFamily:'var(--sans)', fontSize, fontWeight, color:fontColor, lineHeight:block.type==='heading'?1.3:1.7, outline:'none', wordBreak:'break-word', overflowWrap:'break-word', whiteSpace:'pre-wrap', marginBottom:block.type==='heading'?'16px':'0px', letterSpacing:block.type==='heading'?'-0.5px':'0px', textTransform:block.type==='heading'?'uppercase':'none', maxWidth:'100%', boxSizing:'border-box', cursor:canEdit?'text':'default' }}
         spellCheck={false}
         data-placeholder={block.type==='heading'?'Resolution heading…':block.type==='point'?'Clause…':'Write here…'}
         onInput={handleInput} onMouseUp={handleMouseUp} onKeyDown={handleLocalKeyDown}
       />
 
-      {/* Live text cursors — Google Docs style blinking caret, no mouse pointer */}
-      {blockPresences.map((p: any) => (
-        <div
-          key={p.userId}
-          title={p.delegation}
-          style={{
-            position: 'absolute', right: 0, top: 2,
-            display: 'flex', alignItems: 'stretch', gap: 4,
-            pointerEvents: 'none', zIndex: 10,
-            transition: 'opacity 0.2s ease',
-          }}
-        >
-          {/* Blinking text caret — thin vertical bar, like a real cursor */}
-          <div style={{
-            width: 2, alignSelf: 'stretch', minHeight: 18,
-            background: userColor(p.userId),
-            borderRadius: 1,
-            animation: 'caretBlink 1s step-end infinite',
-          }} />
-          {/* Name tag */}
+      {/* Collaborators' carets, at their exact text position */}
+      {carets.map(c => (
+        <div key={c.userId} aria-hidden="true" style={{
+          position:'absolute', left:c.x, top:c.y, height:c.h, width:0,
+          pointerEvents:'none', zIndex:10,
+          transition:'left .12s var(--ease-out), top .12s var(--ease-out)',
+        }}>
+          <div style={{ position:'absolute', left:-1, top:0, bottom:0, width:2, borderRadius:1, background:userColor(c.userId) }} />
           <span style={{
-            fontSize: 10, fontWeight: 700, color: '#fff',
-            background: userColor(p.userId),
-            borderRadius: 4, padding: '2px 6px', whiteSpace: 'nowrap',
-            boxShadow: '0 1px 4px rgba(0,0,0,0.20)',
-            alignSelf: 'flex-start',
-          }}>
-            {p.delegation}
-          </span>
+            position:'absolute', left:-1, bottom:'100%', marginBottom:1,
+            fontSize:10, lineHeight:'14px', fontWeight:500, color:'#fff', fontFamily:'var(--sans)',
+            background:userColor(c.userId), borderRadius:'4px 4px 4px 0', padding:'1px 6px',
+            whiteSpace:'nowrap', textTransform:'none', letterSpacing:0,
+          }}>{c.delegation}</span>
         </div>
       ))}
     </div>
@@ -202,7 +254,7 @@ const ImageBlock = ({ block, canEdit, onRemove }: { block: any; canEdit: boolean
         <button
           onClick={onRemove}
           title="Remove image"
-          style={{ position:'absolute', top:6, right:6, width:24, height:24, borderRadius:6, background:'rgba(220,38,38,0.85)', color:'#fff', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:700 }}
+          style={{ position:'absolute', top:6, right:6, width:24, height:24, borderRadius:6, background:'rgba(220,38,38,0.85)', color:'#fff', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:500 }}
         >
           <IconX />
         </button>
@@ -269,12 +321,17 @@ export default function Resolutions() {
   const lastKnownBlocks = useRef<Map<string, any>>(new Map());
   const pendingSaveIds  = useRef<Set<string>>(new Set());
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const liveRef         = useRef<LiveHandle | null>(null);
+  const renderedRef     = useRef<Map<string, any>>(new Map()); // blocks as last rendered
+  const pendingDeletes  = useRef<Set<string>>(new Set());       // ids this user removed
+  const pollNowRef      = useRef<() => void>(() => {});
   // wsBlockedRef and connectionMode removed — no WebSocket exists anymore,
   // polling is the only sync path, unconditionally
 
   const isChair = profile?.role !== 'Delegate' && profile?.role !== null;
 
   useEffect(() => { pendingBlocks.current = blocks; }, [blocks]);
+  renderedRef.current = new Map(blocks.map((b: any) => [b.id, b]));
   useEffect(() => { profileRef.current = profile; }, [profile]);
   useEffect(() => { myBlocsRef.current = myBlocs; }, [myBlocs]);
   useEffect(() => { activeResRef.current = activeRes; }, [activeRes]);
@@ -301,7 +358,28 @@ export default function Resolutions() {
   // covered by polling (see below + getResolutions list refresh). Presence/
   // cursors rode the same channel and are not replaced — trackCursorBlock
   // is now a no-op.
+  // Caret sharing is driven by selectionchange (below); clicks need nothing extra
   const trackCursorBlock = (_blockId: string) => {};
+
+  useEffect(() => {
+    if (!activeRes?.id) return;
+    const onSel = () => {
+      const sel = window.getSelection();
+      const node = sel?.focusNode;
+      const blockEl = (node instanceof Element ? node : node?.parentElement)?.closest?.('[data-block-id]') as HTMLElement | null;
+      const editable = blockEl?.querySelector('[contenteditable]') as HTMLElement | null;
+      if (!sel || !node || !blockEl || !editable || !editable.contains(node)) {
+        liveRef.current?.setPresence({ blockId: null, offset: null });
+        return;
+      }
+      liveRef.current?.setPresence({
+        blockId: blockEl.getAttribute('data-block-id'),
+        offset: caretOffsetIn(editable, node, sel.focusOffset),
+      });
+    };
+    document.addEventListener('selectionchange', onSel);
+    return () => document.removeEventListener('selectionchange', onSel);
+  }, [activeRes?.id]);
 
   // ── Fetch core data ───────────────────────────────────────────────────────────
   const restoreLastResolution = (resList: any[]) => {
@@ -350,6 +428,37 @@ export default function Resolutions() {
         console.error('Delegate resolution fetch failed:', e);
       }
     }
+  };
+
+  // ── Live room per open resolution (Liveblocks; no-op without a key) ─────────
+  // Peers ping on save so we refetch from Supabase immediately instead of
+  // waiting for the next poll; presence restores the who's-editing cursors.
+  useEffect(() => {
+    if (!activeRes?.id || !authUser?.id) return;
+    const resId = activeRes.id;
+    const handle = joinRoom(
+      roomId.resolution(resId),
+      { userId: authUser.id, delegation: profileRef.current?.delegation || profileRef.current?.role || 'Chair', blockId: null, offset: null },
+      {
+        onPing: p => {
+          if (p.type === 'blocks') pollNowRef.current();
+          if (p.type === 'amendments') loadAmendments(resId);
+          if (p.type === 'resolution') refreshActiveMeta(resId);
+        },
+        onOthers: setPresences,
+        // Catch up on anything missed while (re)connecting — replaces polling
+        onStatus: connected => { if (connected) pollNowRef.current(); },
+      },
+    );
+    liveRef.current = handle;
+    return () => { handle.leave(); liveRef.current = null; setPresences([]); };
+  }, [activeRes?.id, authUser?.id]);
+
+  const refreshActiveMeta = async (resId: number) => {
+    const { data } = await supabase.from('resolutions').select('id,title,status,amendments_open,submitted_at').eq('id', resId).single();
+    if (!data) return;
+    setActiveRes((prev: any) => prev && prev.id === resId ? { ...prev, ...data } : prev);
+    setResolutions(prev => prev.map(r => r.id === resId ? { ...r, ...data } : r));
   };
 
   // ── Open / create resolution ──────────────────────────────────────────────────
@@ -430,6 +539,7 @@ export default function Resolutions() {
 
           sawChange = changed;
           if (!changed) return prev; // no-op, avoids needless re-render
+          pendingBlocks.current = finalBlocks;
           return finalBlocks;
         });
 
@@ -450,6 +560,9 @@ export default function Resolutions() {
 
       function scheduleNext() {
         if (cancelled) return;
+        // With Liveblocks on, peers' pings and reconnects trigger fetches —
+        // no timer. Polling only runs when no Liveblocks key is configured.
+        if (liveEnabled) return;
         // Also treat a pending local save as "active" — don't back off
         // while the user is mid-edit even if the poll itself saw no
         // remote change yet (their own keystrokes count as activity)
@@ -466,8 +579,12 @@ export default function Resolutions() {
       }
     };
 
-    pollIntervalRef.current = setTimeout(poll, POLL_FAST_MS);
-    return () => { cancelled = true; if (pollIntervalRef.current) clearTimeout(pollIntervalRef.current); };
+    pollNowRef.current = () => {
+      if (pollIntervalRef.current) clearTimeout(pollIntervalRef.current);
+      poll();
+    };
+    if (!liveEnabled) pollIntervalRef.current = setTimeout(poll, POLL_FAST_MS);
+    return () => { cancelled = true; pollNowRef.current = () => {}; if (pollIntervalRef.current) clearTimeout(pollIntervalRef.current); };
   }, [activeRes?.id]);
 
   const openResolution = async (res: any) => {
@@ -547,8 +664,11 @@ export default function Resolutions() {
       return prev.html !== b.html || prev.type !== b.type || prev.indent !== b.indent || prev.position !== idx;
     });
 
-    // Find blocks that were deleted
-    const deletedIds = Array.from(prevMap.keys()).filter(id => !newIds.has(id));
+    // Only delete blocks this user actually removed. Diffing against the last
+    // server snapshot would also "delete" blocks a peer added that haven't
+    // reached this client yet.
+    const deletedIds = Array.from(pendingDeletes.current).filter(id => !newIds.has(id));
+    void prevMap;
 
     try {
       await Promise.all([
@@ -567,17 +687,39 @@ export default function Resolutions() {
       // Save confirmed — these blocks are no longer "pending", safe for the
       // poll to overwrite them again if a newer remote version shows up
       changed.forEach(b => pendingSaveIds.current.delete(b.id));
-      deletedIds.forEach(id => pendingSaveIds.current.delete(id));
+      deletedIds.forEach(id => { pendingSaveIds.current.delete(id); pendingDeletes.current.delete(id); });
 
       lastSaveTime.current = Date.now();
       setSyncStatus('saved');
+      if (changed.length || deletedIds.length) liveRef.current?.ping({ type: 'blocks' });
     } catch (e) {
       console.error('Block sync failed:', e);
       setSyncStatus('saved'); // don't get stuck on "saving" forever
     }
   };
 
-  const commitBlocks = (updated: any[]) => {
+  const sameBlock = (a: any, b: any) => a.html === b.html && a.type === b.type && a.indent === b.indent;
+
+  const commitBlocks = (proposed: any[]) => {
+    // `proposed` is built from the blocks this user last saw rendered. If a
+    // peer's change landed since, keep it: untouched blocks take the latest
+    // version, and peer-added blocks the user never saw are not dropped.
+    const latest: any[] = pendingBlocks.current;
+    const latestMap = new Map(latest.map((b: any) => [b.id, b]));
+    const seen = renderedRef.current;
+    const proposedIds = new Set(proposed.map(b => b.id));
+
+    seen.forEach((_b, id) => { if (!proposedIds.has(id)) pendingDeletes.current.add(id); });
+
+    const updated: any[] = proposed.map(b => {
+      const was = seen.get(b.id), now = latestMap.get(b.id);
+      return was && now && sameBlock(b, was) && !sameBlock(now, was) ? now : b;
+    });
+    latest.forEach((b: any, i: number) => {
+      if (!proposedIds.has(b.id) && !seen.has(b.id)) updated.splice(Math.min(i, updated.length), 0, b);
+    });
+
+    pendingBlocks.current = updated;
     setBlocks(updated);
     setSyncStatus('saving');
 
@@ -736,6 +878,7 @@ export default function Resolutions() {
       setPreviewVersion(null);
       setShowHistory(false);
       setSyncStatus('saved');
+      liveRef.current?.ping({ type: 'blocks' });
     } catch (e) { console.error(e); }
   };
 
@@ -847,6 +990,7 @@ export default function Resolutions() {
       setAmendInput('');
       setSelectionData(null);
       loadAmendments(activeRes.id);
+      liveRef.current?.ping({ type: 'amendments' });
     } catch (e) { console.error(e); }
     setAmendSubmitting(false);
   };
@@ -858,6 +1002,8 @@ export default function Resolutions() {
     try {
       await reviewAmendment(id, status);
       loadAmendments(activeRes.id);
+      liveRef.current?.ping({ type: 'amendments' });
+      if (status === 'approved') liveRef.current?.ping({ type: 'blocks' });
       if (status === 'approved') {
         // Reload blocks from DB
         const { data: res } = await supabase.from('resolutions').select('content').eq('id', activeRes.id).single();
@@ -876,6 +1022,7 @@ export default function Resolutions() {
       await submitResolution(activeRes.id);
       setActiveRes((p: any) => ({ ...p, status: 'submitted' }));
       setResolutions(prev => prev.map(r => r.id === activeRes.id ? { ...r, status: 'submitted' } : r));
+      liveRef.current?.ping({ type: 'resolution' });
     } catch (e) { console.error(e); }
   };
 
@@ -888,6 +1035,7 @@ export default function Resolutions() {
         await lockResolution(activeRes.id);
         setActiveRes((p: any) => ({ ...p, status: 'locked' }));
       }
+      liveRef.current?.ping({ type: 'resolution' });
     } catch (e) { console.error(e); }
   };
 
@@ -904,6 +1052,7 @@ export default function Resolutions() {
       await toggleAmendments(activeRes.id, next);
       setActiveRes((p: any) => ({ ...p, amendments_open: next }));
       setResolutions(prev => prev.map(r => r.id === activeRes.id ? { ...r, amendments_open: next } : r));
+      liveRef.current?.ping({ type: 'resolution' });
     } catch (e) { console.error(e); }
   };
 
@@ -911,6 +1060,7 @@ export default function Resolutions() {
     try {
       await reopenResolution(activeRes.id);
       setActiveRes((p: any) => ({ ...p, status: 'draft', submitted_at: null }));
+      liveRef.current?.ping({ type: 'resolution' });
     } catch (e) { console.error(e); }
   };
 
@@ -948,7 +1098,6 @@ export default function Resolutions() {
     return (
       <div style={{ height:'100vh', display:'flex', flexDirection:'column', background: presentationMode ? 'var(--bg-elevated)' : 'var(--bg-base)', overflow:'hidden' }}>
         <style>{`
-          @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
           [contenteditable]:empty:before { content:attr(data-placeholder); color:var(--text-muted); pointer-events:none; display:block; }
           [contenteditable]:focus { outline:none; }
           /* Amendment selection highlight */
@@ -959,22 +1108,22 @@ export default function Resolutions() {
           .ver-item { padding:12px 14px; border-bottom:1px solid var(--border); cursor:pointer; transition:background 0.1s; }
           .ver-item:hover { background:var(--bg-surface); }
           .ver-item:last-child { border-bottom:none; }
-          .status-pill { font-size:10px; font-weight:800; padding:2px 8px; border-radius:99px; text-transform:uppercase; letter-spacing:1px; }
+          .status-pill { font-size:10px; font-weight:600; padding:2px 8px; border-radius:99px; text-transform:uppercase; letter-spacing:1px; }
 
           /* Floating selection toolbar */
           .sel-toolbar { position:fixed; transform:translate(-50%,-100%); margin-top:-8px; z-index:900; display:flex; gap:3px; background:var(--bg-elevated); border:1px solid var(--border); border-radius:10px; padding:5px; box-shadow:var(--shadow-lg); animation:popIn 0.12s ease; }
           @keyframes popIn { from{opacity:0;transform:translate(-50%,-90%)} to{opacity:1;transform:translate(-50%,-100%)} }
-          .sel-btn { font-size:11px; font-weight:700; padding:5px 11px; border-radius:7px; border:1px solid transparent; cursor:pointer; font-family:Manrope,sans-serif; transition:all 0.1s; letter-spacing:0.3px; }
+          .sel-btn { font-size:11px; font-weight:500; padding:5px 11px; border-radius:7px; border:1px solid transparent; cursor:pointer; font-family:var(--sans); transition:all 0.1s; letter-spacing:0.3px; }
           .sel-btn-add    { background:rgba(34,197,94,0.12);  color:#16A34A; border-color:rgba(34,197,94,0.25); }
           .sel-btn-add:hover    { background:rgba(34,197,94,0.22); }
-          .sel-btn-modify { background:rgba(245,158,11,0.12); color:#B45309; border-color:rgba(245,158,11,0.25); }
+          .sel-btn-modify { background:rgba(245,158,11,0.12); color:#F59E0B; border-color:rgba(245,158,11,0.25); }
           .sel-btn-modify:hover { background:rgba(245,158,11,0.22); }
           .sel-btn-strike { background:rgba(220,38,38,0.10);  color:#DC2626; border-color:rgba(220,38,38,0.22); }
           .sel-btn-strike:hover { background:rgba(220,38,38,0.20); }
 
           /* Popup input */
           .amend-popup { position:fixed; z-index:901; background:var(--bg-elevated); border:1px solid var(--border); border-radius:14px; padding:14px; box-shadow:var(--shadow-xl); width:280px; transform:translateX(-50%); animation:popIn 0.15s ease; }
-          .amend-popup-header { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:1px; margin-bottom:10px; }
+          .amend-popup-header { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:1px; margin-bottom:10px; }
           .amend-popup input { font-size:13px; padding:9px 12px; margin-bottom:10px; border-radius:9px; }
           .amend-popup-btns { display:flex; gap:7px; }
 
@@ -986,34 +1135,39 @@ export default function Resolutions() {
           .amend-item { display:flex; align-items:flex-start; gap:10px; padding:11px 20px; border-bottom:1px solid var(--border); transition:background 0.1s; }
           .amend-item:last-child { border-bottom:none; }
           .amend-item:hover { background:var(--bg-surface); }
-          .amend-type-chip { font-size:9px; font-weight:800; padding:2px 7px; border-radius:99px; text-transform:uppercase; letter-spacing:0.8px; flex-shrink:0; margin-top:1px; }
-          .amend-status-chip { font-size:9px; font-weight:700; padding:2px 7px; border-radius:99px; flex-shrink:0; }
+          .amend-type-chip { font-size:9px; font-weight:600; padding:2px 7px; border-radius:99px; text-transform:uppercase; letter-spacing:0.8px; flex-shrink:0; margin-top:1px; }
+          .amend-status-chip { font-size:9px; font-weight:500; padding:2px 7px; border-radius:99px; flex-shrink:0; }
           @keyframes caretBlink { 0%,50% { opacity:1; } 50.01%,100% { opacity:0; } }
           @media(max-width:768px) { .ver-panel { display:none; } .amend-popup { width:90vw; } }
+          .res-toolbar button, .res-toolbar span { white-space:nowrap; }
+          .res-toolbar > div { min-width:0; }
+          .res-toolbar > div:last-child { overflow-x:auto; scrollbar-width:none; flex-shrink:1; }
+          .res-toolbar > div:last-child::-webkit-scrollbar { display:none; }
+          @media(max-width:900px) { .res-sync-label { display:none; } }
         `}</style>
 
         {/* ── Toolbar ── */}
         {!presentationMode && (
-          <div style={{ padding:'0 24px', height:52, background:'var(--bg-elevated)', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0, boxShadow:'var(--shadow-sm)' }}>
+          <div className="res-toolbar" style={{ padding:'0 clamp(12px,2vw,24px)', height:52, background:'var(--bg-elevated)', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexShrink:0, boxShadow:'var(--shadow-sm)' }}>
             <div style={{ display:'flex', alignItems:'center', gap:14 }}>
-              <button onClick={() => { setActiveRes(null); try { localStorage.removeItem('sodmun_last_reso_id'); } catch {} }} style={{ background:'transparent', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:8, color:'var(--text-secondary)', fontSize:13, fontWeight:600, fontFamily:'Manrope,sans-serif', padding:'6px 10px', borderRadius:8 }}
+              <button onClick={() => { setActiveRes(null); try { localStorage.removeItem('sodmun_last_reso_id'); } catch {} }} style={{ background:'transparent', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:8, color:'var(--text-secondary)', fontSize:13, fontWeight:500, fontFamily:'var(--sans)', padding:'6px 10px', borderRadius:8 }}
                 onMouseEnter={e => (e.currentTarget as HTMLElement).style.background='var(--bg-surface)'}
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.background='transparent'}
               ><IconBack /> Resolutions</button>
               <div style={{ width:1, height:20, background:'var(--border)' }} />
               <div style={{ display:'flex', alignItems:'center', gap:6 }}>
                 <div style={{ width:8, height:8, borderRadius:'50%', background:syncStatus==='saved'?'#22C55E':'var(--accent)', transition:'background 0.3s' }} />
-                <span style={{ fontSize:12, color:'var(--text-muted)', fontWeight:500 }}>{syncStatus==='saved'?'All changes saved':'Saving…'}</span>
+                <span className="res-sync-label" style={{ fontSize:12, color:'var(--text-muted)', fontWeight:500 }}>{syncStatus==='saved'?'Saved':'Saving…'}</span>
               </div>
               {/* Presence indicators */}
               {presences.length > 0 && (
                 <div style={{ display:'flex', gap:4 }}>
                   {presences.slice(0,4).map((p: any) => (
-                    <div key={p.userId} title={p.delegation} style={{ width:24, height:24, borderRadius:6, background:userColor(p.userId), display:'flex', alignItems:'center', justifyContent:'center', fontSize:9, fontWeight:800, color:'#fff', flexShrink:0 }}>
+                    <div key={p.userId} title={p.delegation} style={{ width:24, height:24, borderRadius:6, background:userColor(p.userId), display:'flex', alignItems:'center', justifyContent:'center', fontSize:9, fontWeight:600, color:'#fff', flexShrink:0 }}>
                       {(p.delegation||'?').slice(0,2).toUpperCase()}
                     </div>
                   ))}
-                  {presences.length > 4 && <div style={{ width:24, height:24, borderRadius:6, background:'var(--bg-surface)', border:'1px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:9, fontWeight:700, color:'var(--text-muted)' }}>+{presences.length-4}</div>}
+                  {presences.length > 4 && <div style={{ width:24, height:24, borderRadius:6, background:'var(--bg-surface)', border:'1px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:9, fontWeight:500, color:'var(--text-muted)' }}>+{presences.length-4}</div>}
                 </div>
               )}
             </div>
@@ -1028,11 +1182,11 @@ export default function Resolutions() {
               {isChair && (
                 <>
                   {activeRes.status === 'submitted' && (
-                    <button onClick={handleReopen} style={{ fontSize:11, padding:'6px 12px', borderRadius:8, border:'1px solid var(--border)', background:'var(--bg-surface)', color:'var(--text-secondary)', cursor:'pointer', fontFamily:'Manrope,sans-serif', fontWeight:700 }}>
+                    <button onClick={handleReopen} style={{ fontSize:11, padding:'6px 12px', borderRadius:8, border:'1px solid var(--border)', background:'var(--bg-surface)', color:'var(--text-secondary)', cursor:'pointer', fontFamily:'var(--sans)', fontWeight:500 }}>
                       Reopen
                     </button>
                   )}
-                  <button onClick={handleLock} style={{ fontSize:11, padding:'6px 12px', borderRadius:8, border:'1px solid', cursor:'pointer', fontFamily:'Manrope,sans-serif', fontWeight:700, display:'flex', alignItems:'center', gap:5, background: activeRes.status==='locked' ? 'rgba(220,38,38,0.08)' : 'var(--bg-surface)', color: activeRes.status==='locked' ? '#DC2626' : 'var(--text-secondary)', borderColor: activeRes.status==='locked' ? 'rgba(220,38,38,0.25)' : 'var(--border)' }}>
+                  <button onClick={handleLock} style={{ fontSize:11, padding:'6px 12px', borderRadius:8, border:'1px solid', cursor:'pointer', fontFamily:'var(--sans)', fontWeight:500, display:'flex', alignItems:'center', gap:5, background: activeRes.status==='locked' ? 'rgba(220,38,38,0.08)' : 'var(--bg-surface)', color: activeRes.status==='locked' ? '#DC2626' : 'var(--text-secondary)', borderColor: activeRes.status==='locked' ? 'rgba(220,38,38,0.25)' : 'var(--border)' }}>
                     {activeRes.status==='locked' ? <><IconUnlock/>Unlock</> : <><IconLock/>Lock</>}
                   </button>
                 </>
@@ -1040,35 +1194,35 @@ export default function Resolutions() {
 
               {/* Delegate: submit — hidden when amendments are open */}
               {!isChair && activeRes.status === 'draft' && !activeRes.amendments_open && (
-                <button onClick={handleSubmit} style={{ fontSize:11, padding:'6px 14px', borderRadius:8, background:'var(--accent)', color:'#fff', border:'none', cursor:'pointer', fontFamily:'Manrope,sans-serif', fontWeight:700, boxShadow:'0 2px 8px rgba(240,124,0,0.25)' }}>
+                <button onClick={handleSubmit} style={{ fontSize:11, padding:'6px 14px', borderRadius:8, background:'var(--accent)', color:'#fff', border:'none', cursor:'pointer', fontFamily:'var(--sans)', fontWeight:500, boxShadow:'0 2px 8px rgba(34,164,87,0.25)' }}>
                   Submit for Review
                 </button>
               )}
 
               {/* Version history */}
-              <button onClick={handleShowHistory} style={{ fontSize:11, padding:'6px 12px', borderRadius:8, border:'1px solid var(--border)', background: showHistory ? 'var(--accent-soft)' : 'var(--bg-surface)', color: showHistory ? 'var(--accent)' : 'var(--text-secondary)', cursor:'pointer', fontFamily:'Manrope,sans-serif', fontWeight:700, display:'flex', alignItems:'center', gap:5 }}>
+              <button onClick={handleShowHistory} style={{ fontSize:11, padding:'6px 12px', borderRadius:8, border:'1px solid var(--border)', background: showHistory ? 'var(--accent-soft)' : 'var(--bg-surface)', color: showHistory ? 'var(--accent)' : 'var(--text-secondary)', cursor:'pointer', fontFamily:'var(--sans)', fontWeight:500, display:'flex', alignItems:'center', gap:5 }}>
                 <IconHistory /> History
               </button>
 
               {/* Insert image — only when editable */}
               {canEdit && !previewBlocks && (
-                <button onClick={() => openImageModal()} style={{ fontSize:11, padding:'6px 12px', borderRadius:8, border:'1px solid var(--border)', background:'var(--bg-surface)', color:'var(--text-secondary)', cursor:'pointer', fontFamily:'Manrope,sans-serif', fontWeight:700, display:'flex', alignItems:'center', gap:5 }}>
+                <button onClick={() => openImageModal()} style={{ fontSize:11, padding:'6px 12px', borderRadius:8, border:'1px solid var(--border)', background:'var(--bg-surface)', color:'var(--text-secondary)', cursor:'pointer', fontFamily:'var(--sans)', fontWeight:500, display:'flex', alignItems:'center', gap:5 }}>
                   <IconImage /> Image
                 </button>
               )}
 
               {/* Amendments — only visible when amendments are open or for chairs */}
               {activeRes.amendments_open && (
-                <button onClick={() => { setShowAmendments(v=>!v); setShowHistory(false); }} style={{ fontSize:11, padding:'6px 12px', borderRadius:8, border:'1px solid var(--border)', background: showAmendments ? 'var(--accent-soft)' : 'var(--bg-surface)', color: showAmendments ? 'var(--accent)' : 'var(--text-secondary)', cursor:'pointer', fontFamily:'Manrope,sans-serif', fontWeight:700, display:'flex', alignItems:'center', gap:5, position:'relative' }}>
+                <button onClick={() => { setShowAmendments(v=>!v); setShowHistory(false); }} style={{ fontSize:11, padding:'6px 12px', borderRadius:8, border:'1px solid var(--border)', background: showAmendments ? 'var(--accent-soft)' : 'var(--bg-surface)', color: showAmendments ? 'var(--accent)' : 'var(--text-secondary)', cursor:'pointer', fontFamily:'var(--sans)', fontWeight:500, display:'flex', alignItems:'center', gap:5, position:'relative' }}>
                   <IconAmend /> Amendments
-                  {pendingAmendments.length > 0 && <span style={{ position:'absolute', top:-4, right:-4, minWidth:16, height:16, borderRadius:99, background:'#DC2626', color:'#fff', fontSize:9, fontWeight:800, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 3px' }}>{pendingAmendments.length}</span>}
+                  {pendingAmendments.length > 0 && <span style={{ position:'absolute', top:-4, right:-4, minWidth:16, height:16, borderRadius:99, background:'#DC2626', color:'#fff', fontSize:9, fontWeight:600, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 3px' }}>{pendingAmendments.length}</span>}
                 </button>
               )}
 
               {isChair && (
                 <button
                   onClick={handleToggleAmendments}
-                  style={{ fontSize:11, padding:'6px 12px', borderRadius:8, border:'1px solid', cursor:'pointer', fontFamily:'Manrope,sans-serif', fontWeight:700, display:'flex', alignItems:'center', gap:5,
+                  style={{ fontSize:11, padding:'6px 12px', borderRadius:8, border:'1px solid', cursor:'pointer', fontFamily:'var(--sans)', fontWeight:500, display:'flex', alignItems:'center', gap:5,
                     background: activeRes.amendments_open ? 'rgba(99,102,241,0.10)' : 'var(--bg-surface)',
                     color: activeRes.amendments_open ? '#6366F1' : 'var(--text-secondary)',
                     borderColor: activeRes.amendments_open ? 'rgba(99,102,241,0.30)' : 'var(--border)',
@@ -1084,13 +1238,13 @@ export default function Resolutions() {
         )}
 
         {presentationMode && (
-          <button onClick={() => setPresentationMode(false)} style={{ position:'fixed', top:20, right:20, padding:'8px 16px', background:'rgba(0,0,0,0.75)', backdropFilter:'blur(8px)', color:'#fff', borderRadius:8, zIndex:100, border:'none', fontWeight:700, fontSize:12, cursor:'pointer', fontFamily:'Manrope,sans-serif' }}>Exit</button>
+          <button onClick={() => setPresentationMode(false)} style={{ position:'fixed', top:20, right:20, padding:'8px 16px', background:'rgba(0,0,0,0.75)', backdropFilter:'blur(8px)', color:'#fff', borderRadius:8, zIndex:100, border:'none', fontWeight:500, fontSize:12, cursor:'pointer', fontFamily:'var(--sans)' }}>Exit</button>
         )}
 
         {/* ── Status banner for delegates ── */}
         {/* Amendments-open strip — amber, same style as locked */}
         {activeRes.amendments_open && activeRes.status !== 'locked' && (
-          <div style={{ padding:'9px 24px', background:'rgba(245,158,11,0.10)', borderBottom:'1px solid rgba(245,158,11,0.28)', fontSize:12, fontWeight:700, color:'#92400E', flexShrink:0, display:'flex', alignItems:'center', gap:8 }}>
+          <div style={{ padding:'9px 24px', background:'rgba(245,158,11,0.10)', borderBottom:'1px solid rgba(245,158,11,0.28)', fontSize:12, fontWeight:500, color:'#FBBF24', flexShrink:0, display:'flex', alignItems:'center', gap:8 }}>
             <IconAmend />
             {isChair
               ? 'Amendments are open — delegates can propose changes by highlighting text'
@@ -1099,12 +1253,12 @@ export default function Resolutions() {
         )}
         {/* Submitted strip (only when amendments NOT open) */}
         {!isChair && activeRes.status === 'submitted' && !activeRes.amendments_open && (
-          <div style={{ padding:'9px 24px', background:'rgba(245,158,11,0.08)', borderBottom:'1px solid rgba(245,158,11,0.20)', fontSize:12, fontWeight:700, color:'#B45309', flexShrink:0, display:'flex', alignItems:'center', gap:8 }}>
+          <div style={{ padding:'9px 24px', background:'rgba(245,158,11,0.08)', borderBottom:'1px solid rgba(245,158,11,0.20)', fontSize:12, fontWeight:500, color:'#F59E0B', flexShrink:0, display:'flex', alignItems:'center', gap:8 }}>
             <IconCheck /> Submitted for review — editing disabled. Waiting for chair to open amendments.
           </div>
         )}
         {activeRes.status === 'locked' && (
-          <div style={{ padding:'8px 24px', background:'rgba(220,38,38,0.07)', borderBottom:'1px solid rgba(220,38,38,0.18)', fontSize:12, fontWeight:700, color:'#DC2626', flexShrink:0, display:'flex', alignItems:'center', gap:8 }}>
+          <div style={{ padding:'8px 24px', background:'rgba(220,38,38,0.07)', borderBottom:'1px solid rgba(220,38,38,0.18)', fontSize:12, fontWeight:500, color:'#DC2626', flexShrink:0, display:'flex', alignItems:'center', gap:8 }}>
             <IconLock /> {isChair ? 'Resolution is locked — unlock to make changes.' : 'Locked by Chair — no changes can be made.'}
           </div>
         )}
@@ -1113,20 +1267,20 @@ export default function Resolutions() {
         <div style={{ flex:1, display:'flex', minHeight:0 }}>
 
           {/* Doc scroll area */}
-          <div style={{ flex:1, overflowY:'auto', overflowX:'hidden', padding: presentationMode ? '60px 40px' : '40px 52px' }}>
-            <div style={{ margin:'0 auto', width:'100%', maxWidth:816 }}>
-              <div id="resolution-paper" style={{ background:'var(--bg-elevated)', width:'100%', borderRadius: presentationMode ? 0 : 4, padding:`clamp(24px,6vw,72px) clamp(20px,8vw,96px)`, boxShadow: presentationMode ? 'none' : 'var(--shadow-md)', border: presentationMode ? 'none' : '1px solid var(--border)', boxSizing:'border-box', overflow:'hidden' }}>
+          <div style={{ flex:1, overflowY:'auto', overflowX:'hidden', padding: presentationMode ? '60px 40px' : '28px clamp(16px,3vw,40px)' }}>
+            <div style={{ margin:'0 auto', width:'100%' }}>
+              <div id="resolution-paper" style={{ background:'var(--bg-elevated)', width:'100%', borderRadius: presentationMode ? 0 : 4, padding:`clamp(24px,5vw,64px) clamp(20px,5vw,72px)`, boxShadow: presentationMode ? 'none' : 'var(--shadow-md)', border: presentationMode ? 'none' : '1px solid var(--border)', boxSizing:'border-box', overflow:'hidden' }}>
 
                 {/* Title */}
                 <input value={activeRes.title} onChange={e => handleTitleChange(e.target.value)} spellCheck={false}
                   placeholder="Untitled Resolution" disabled={!canEdit}
-                  style={{ width:'100%', textAlign:'center', background:'transparent', border:'none', color: presentationMode ? 'var(--text-primary)' : 'var(--text-primary)', fontSize: presentationMode ? '40px' : '26px', fontWeight:800, fontFamily:'Manrope,sans-serif', textTransform:'uppercase', outline:'none', padding:0, marginBottom:8, letterSpacing:'-0.5px', boxSizing:'border-box', cursor: canEdit ? 'text' : 'default' }}
+                  style={{ width:'100%', textAlign:'center', background:'transparent', border:'none', color:'var(--text-primary)', fontSize: presentationMode ? '58px' : '40px', fontWeight:400, fontFamily:'var(--display)', textTransform:'none', outline:'none', padding:0, marginBottom:8, letterSpacing:'-0.5px', boxSizing:'border-box', cursor: canEdit ? 'text' : 'default' }}
                 />
 
                 {/* Subtitle */}
                 <div style={{ display:'flex', justifyContent:'center', marginBottom:32, gap:8, alignItems:'center' }}>
                   <div style={{ height:1, flex:1, background:'var(--border)' }} />
-                  <span style={{ fontSize:11, fontWeight:600, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1.5px', whiteSpace:'nowrap' }}>
+                  <span style={{ fontSize:11, fontWeight:500, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1.5px', whiteSpace:'nowrap' }}>
                     {profile?.committee} · {activeRes.created_at ? new Date(activeRes.created_at).getFullYear() : new Date().getFullYear()}
                     {activeRes.updated_at && ` · Edited ${timeAgo(activeRes.updated_at)}`}
                   </span>
@@ -1158,10 +1312,10 @@ export default function Resolutions() {
                 ))}
 
                 {previewBlocks && (
-                  <div style={{ marginTop:32, padding:'12px 16px', background:'rgba(99,102,241,0.07)', border:'1px solid rgba(99,102,241,0.20)', borderRadius:10, fontSize:12, fontWeight:600, color:'#6366F1', display:'flex', gap:12, alignItems:'center' }}>
+                  <div style={{ marginTop:32, padding:'12px 16px', background:'rgba(99,102,241,0.07)', border:'1px solid rgba(99,102,241,0.20)', borderRadius:10, fontSize:12, fontWeight:500, color:'#6366F1', display:'flex', gap:12, alignItems:'center' }}>
                     Previewing historical version — {previewVersion?.label} · {timeAgo(previewVersion?.saved_at)}
-                    <button onClick={() => setPreviewVersion(null)} style={{ marginLeft:'auto', background:'transparent', border:'none', color:'#6366F1', cursor:'pointer', fontWeight:700, fontFamily:'Manrope,sans-serif', fontSize:12 }}>Exit Preview</button>
-                    {isChair && <button onClick={() => handleRestoreVersion(previewVersion)} style={{ background:'#6366F1', color:'#fff', border:'none', borderRadius:8, padding:'4px 12px', cursor:'pointer', fontWeight:700, fontFamily:'Manrope,sans-serif', fontSize:12 }}>Restore</button>}
+                    <button onClick={() => setPreviewVersion(null)} style={{ marginLeft:'auto', background:'transparent', border:'none', color:'#6366F1', cursor:'pointer', fontWeight:500, fontFamily:'var(--sans)', fontSize:12 }}>Exit Preview</button>
+                    {isChair && <button onClick={() => handleRestoreVersion(previewVersion)} style={{ background:'#6366F1', color:'#fff', border:'none', borderRadius:8, padding:'4px 12px', cursor:'pointer', fontWeight:500, fontFamily:'var(--sans)', fontSize:12 }}>Restore</button>}
                   </div>
                 )}
 
@@ -1174,7 +1328,7 @@ export default function Resolutions() {
           {showHistory && (
             <div className="ver-panel">
               <div style={{ padding:'16px', borderBottom:'1px solid var(--border)', flexShrink:0 }}>
-                <p style={{ fontSize:12, fontWeight:800, color:'var(--text-primary)' }}>Version History</p>
+                <p style={{ fontSize:12, fontWeight:600, color:'var(--text-primary)' }}>Version History</p>
                 <p style={{ fontSize:11, color:'var(--text-muted)', marginTop:2 }}>Click to preview, restore to apply</p>
               </div>
               <div style={{ flex:1, overflowY:'auto' }}>
@@ -1183,12 +1337,12 @@ export default function Resolutions() {
                 {versions.map(v => (
                   <div key={v.id} className="ver-item" onClick={() => setPreviewVersion(v)} style={{ background: previewVersion?.id === v.id ? 'var(--accent-soft)' : undefined }}>
                     <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:4 }}>
-                      <span style={{ fontSize:11, fontWeight:700, color:'var(--accent)' }}>{v.label || 'Auto'}</span>
+                      <span style={{ fontSize:11, fontWeight:500, color:'var(--accent)' }}>{v.label || 'Auto'}</span>
                       <span style={{ fontSize:10, color:'var(--text-muted)', marginLeft:'auto' }}>{timeAgo(v.saved_at)}</span>
                     </div>
                     <p style={{ fontSize:11, color:'var(--text-secondary)' }}>{v.users?.delegation || v.users?.role || 'System'}</p>
                     {isChair && previewVersion?.id === v.id && (
-                      <button onClick={e => { e.stopPropagation(); handleRestoreVersion(v); }} style={{ marginTop:8, fontSize:11, padding:'4px 10px', borderRadius:6, background:'var(--accent)', color:'#fff', border:'none', cursor:'pointer', fontWeight:700, fontFamily:'Manrope,sans-serif' }}>Restore this version</button>
+                      <button onClick={e => { e.stopPropagation(); handleRestoreVersion(v); }} style={{ marginTop:8, fontSize:11, padding:'4px 10px', borderRadius:6, background:'var(--accent)', color:'#fff', border:'none', cursor:'pointer', fontWeight:500, fontFamily:'var(--sans)' }}>Restore this version</button>
                     )}
                   </div>
                 ))}
@@ -1210,7 +1364,7 @@ export default function Resolutions() {
 
           {/* Hint when amendments open but nothing selected */}
           {activeRes.amendments_open && !selectionToolbar && !amendPopup && activeRes.status !== 'locked' && (
-            <div style={{ position:'fixed', bottom: showAmendments ? 300 : 60, left:'50%', transform:'translateX(-50%)', background:'var(--bg-elevated)', border:'1px solid var(--accent-mid)', borderRadius:99, padding:'7px 18px', fontSize:11, fontWeight:700, color:'var(--accent)', boxShadow:'var(--shadow-md)', pointerEvents:'none', whiteSpace:'nowrap', zIndex:799, display:'flex', alignItems:'center', gap:8 }}>
+            <div style={{ position:'fixed', bottom: showAmendments ? 300 : 60, left:'50%', transform:'translateX(-50%)', background:'var(--bg-elevated)', border:'1px solid var(--accent-mid)', borderRadius:99, padding:'7px 18px', fontSize:11, fontWeight:500, color:'var(--accent)', boxShadow:'var(--shadow-md)', pointerEvents:'none', whiteSpace:'nowrap', zIndex:799, display:'flex', alignItems:'center', gap:8 }}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
               Highlight text in the document to propose an amendment
             </div>
@@ -1220,7 +1374,7 @@ export default function Resolutions() {
           {amendPopup && (
             <div className="amend-popup" style={{ left: Math.min(amendPopup.x, window.innerWidth - 150), top: Math.min(amendPopup.y, window.innerHeight - 200) }}>
               <div className="amend-popup-header" style={{
-                color: amendPopup.type==='add' ? '#16A34A' : amendPopup.type==='modify' ? '#B45309' : '#DC2626'
+                color: amendPopup.type==='add' ? '#16A34A' : amendPopup.type==='modify' ? '#F59E0B' : '#DC2626'
               }}>
                 {amendPopup.type === 'add' ? '+ Add text' : amendPopup.type === 'modify' ? '~ Modify selection' : '✕ Strike selection'}
               </div>
@@ -1249,13 +1403,13 @@ export default function Resolutions() {
                 <button
                   onClick={submitAmendmentDraft}
                   disabled={amendSubmitting || (amendPopup.type !== 'strike' && !amendInput.trim())}
-                  style={{ flex:1, fontSize:12, fontWeight:700, padding:'8px', borderRadius:8, border:'none', cursor:'pointer', fontFamily:'Manrope,sans-serif',
+                  style={{ flex:1, fontSize:12, fontWeight:500, padding:'8px', borderRadius:8, border:'none', cursor:'pointer', fontFamily:'var(--sans)',
                     background: amendPopup.type==='add' ? '#16A34A' : amendPopup.type==='modify' ? '#B45309' : '#DC2626',
                     color:'#fff', opacity: amendSubmitting ? 0.6 : 1 }}
                 >
                   {amendSubmitting ? 'Submitting…' : 'Submit'}
                 </button>
-                <button onClick={() => { setAmendPopup(null); setAmendInput(''); }} style={{ fontSize:12, fontWeight:700, padding:'8px 14px', borderRadius:8, border:'1px solid var(--border)', background:'transparent', color:'var(--text-secondary)', cursor:'pointer', fontFamily:'Manrope,sans-serif' }}>
+                <button onClick={() => { setAmendPopup(null); setAmendInput(''); }} style={{ fontSize:12, fontWeight:500, padding:'8px 14px', borderRadius:8, border:'1px solid var(--border)', background:'transparent', color:'var(--text-secondary)', cursor:'pointer', fontFamily:'var(--sans)' }}>
                   Cancel
                 </button>
               </div>
@@ -1269,19 +1423,19 @@ export default function Resolutions() {
           <div className="amend-bar-header" onClick={() => setShowAmendments(v => !v)}>
             <div style={{ display:'flex', alignItems:'center', gap:8, flex:1 }}>
               <IconAmend />
-              <span style={{ fontSize:12, fontWeight:800, color:'var(--text-primary)' }}>Amendments</span>
+              <span style={{ fontSize:12, fontWeight:600, color:'var(--text-primary)' }}>Amendments</span>
               {pendingAmendments.length > 0 && (
-                <span style={{ fontSize:10, fontWeight:800, padding:'1px 8px', borderRadius:99, background:'rgba(220,38,38,0.12)', color:'#DC2626', border:'1px solid rgba(220,38,38,0.20)' }}>
+                <span style={{ fontSize:10, fontWeight:600, padding:'1px 8px', borderRadius:99, background:'rgba(220,38,38,0.12)', color:'#DC2626', border:'1px solid rgba(220,38,38,0.20)' }}>
                   {pendingAmendments.length} pending
                 </span>
               )}
               {!isChair && activeRes.amendments_open && (
-                <span style={{ fontSize:10, fontWeight:700, padding:'1px 8px', borderRadius:99, background:'rgba(99,102,241,0.10)', color:'#6366F1', border:'1px solid rgba(99,102,241,0.20)' }}>
+                <span style={{ fontSize:10, fontWeight:500, padding:'1px 8px', borderRadius:99, background:'rgba(99,102,241,0.10)', color:'#6366F1', border:'1px solid rgba(99,102,241,0.20)' }}>
                   Open — select text to propose
                 </span>
               )}
             </div>
-            <span style={{ fontSize:10, color:'var(--text-muted)', fontWeight:600 }}>
+            <span style={{ fontSize:10, color:'var(--text-muted)', fontWeight:500 }}>
               {showAmendments ? '▼ Hide' : '▲ Show'}
             </span>
           </div>
@@ -1292,8 +1446,8 @@ export default function Resolutions() {
               <p style={{ padding:'14px 20px', fontSize:12, color:'var(--text-muted)' }}>{isChair ? 'No amendments submitted yet.' : 'No amendments yet. Submit one by highlighting text above.'}</p>
             )}
             {visibleAmendments.map(a => {
-              const typeColor = a.type==='add' ? { bg:'rgba(34,197,94,0.12)', c:'#16A34A' } : a.type==='strike' ? { bg:'rgba(220,38,38,0.10)', c:'#DC2626' } : { bg:'rgba(245,158,11,0.12)', c:'#B45309' };
-              const statusColor = a.status==='pending' ? { bg:'rgba(245,158,11,0.12)', c:'#B45309' } : a.status==='approved' ? { bg:'rgba(34,197,94,0.12)', c:'#16A34A' } : { bg:'rgba(220,38,38,0.10)', c:'#DC2626' };
+              const typeColor = a.type==='add' ? { bg:'rgba(34,197,94,0.12)', c:'#16A34A' } : a.type==='strike' ? { bg:'rgba(220,38,38,0.10)', c:'#DC2626' } : { bg:'rgba(245,158,11,0.12)', c:'#F59E0B' };
+              const statusColor = a.status==='pending' ? { bg:'rgba(245,158,11,0.12)', c:'#F59E0B' } : a.status==='approved' ? { bg:'rgba(34,197,94,0.12)', c:'#16A34A' } : { bg:'rgba(220,38,38,0.10)', c:'#DC2626' };
               return (
                 <div key={a.id} className="amend-item">
                   {/* Type + status chips */}
@@ -1304,7 +1458,7 @@ export default function Resolutions() {
                   {/* Content */}
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:3 }}>
-                      <span style={{ fontSize:11, fontWeight:700, color:'var(--text-secondary)' }}>
+                      <span style={{ fontSize:11, fontWeight:500, color:'var(--text-secondary)' }}>
                         {a.users?.delegation || a.users?.role || 'Unknown'}
                       </span>
                       <span style={{ fontSize:10, color:'var(--text-muted)' }}>{timeAgo(a.submitted_at)}</span>
@@ -1324,11 +1478,11 @@ export default function Resolutions() {
                   {isChair && a.status === 'pending' && (
                     <div style={{ display:'flex', gap:6, flexShrink:0 }}>
                       <button onClick={() => handleReviewAmendment(a.id, 'approved')}
-                        style={{ fontSize:11, fontWeight:700, padding:'5px 12px', borderRadius:7, background:'rgba(34,197,94,0.12)', color:'#16A34A', border:'1px solid rgba(34,197,94,0.25)', cursor:'pointer', fontFamily:'Manrope,sans-serif', display:'flex', alignItems:'center', gap:4 }}>
+                        style={{ fontSize:11, fontWeight:500, padding:'5px 12px', borderRadius:7, background:'rgba(34,197,94,0.12)', color:'#16A34A', border:'1px solid rgba(34,197,94,0.25)', cursor:'pointer', fontFamily:'var(--sans)', display:'flex', alignItems:'center', gap:4 }}>
                         <IconCheck /> Approve
                       </button>
                       <button onClick={() => handleReviewAmendment(a.id, 'rejected')}
-                        style={{ fontSize:11, fontWeight:700, padding:'5px 12px', borderRadius:7, background:'rgba(220,38,38,0.08)', color:'#DC2626', border:'1px solid rgba(220,38,38,0.20)', cursor:'pointer', fontFamily:'Manrope,sans-serif', display:'flex', alignItems:'center', gap:4 }}>
+                        style={{ fontSize:11, fontWeight:500, padding:'5px 12px', borderRadius:7, background:'rgba(220,38,38,0.08)', color:'#DC2626', border:'1px solid rgba(220,38,38,0.20)', cursor:'pointer', fontFamily:'var(--sans)', display:'flex', alignItems:'center', gap:4 }}>
                         <IconX /> Reject
                       </button>
                     </div>
@@ -1344,7 +1498,7 @@ export default function Resolutions() {
       {imageModal && (
         <div className="overlay" style={{ zIndex:1100 }}>
           <div className="modal">
-            <h2 style={{ fontSize:16, fontWeight:800, marginBottom:4 }}>Insert Image</h2>
+            <h2 style={{ fontSize:16, fontWeight:600, marginBottom:4 }}>Insert Image</h2>
             <p style={{ fontSize:11, color:'var(--text-muted)', marginBottom:14 }}>PNG, JPG, GIF or WebP · max 10 MB</p>
 
             {/* Drop zone */}
@@ -1359,12 +1513,12 @@ export default function Resolutions() {
                 <>
                   <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" style={{ animation:'spin 1s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
                   <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-                  <span style={{ fontSize:13, fontWeight:700, color:'var(--text-secondary)' }}>Uploading…</span>
+                  <span style={{ fontSize:13, fontWeight:500, color:'var(--text-secondary)' }}>Uploading…</span>
                 </>
               ) : (
                 <>
                   <IconImage />
-                  <span style={{ fontSize:13, fontWeight:700, color:'var(--text-secondary)' }}>Drop image here or <span style={{ color:'var(--accent)' }}>click to browse</span></span>
+                  <span style={{ fontSize:13, fontWeight:500, color:'var(--text-secondary)' }}>Drop image here or <span style={{ color:'var(--accent)' }}>click to browse</span></span>
                 </>
               )}
             </label>
@@ -1372,7 +1526,7 @@ export default function Resolutions() {
               onChange={e => { const f = e.target.files?.[0]; if (f) handleImageFile(f); e.target.value = ''; }}
             />
 
-            {imageError && <p style={{ fontSize:11, color:'#DC2626', marginTop:10, fontWeight:600 }}>{imageError}</p>}
+            {imageError && <p style={{ fontSize:11, color:'#DC2626', marginTop:10, fontWeight:500 }}>{imageError}</p>}
 
             <button className="logout-btn" style={{ width:'100%', height:40, marginTop:14 }} onClick={() => setImageModal(false)} disabled={imageUploading}>Cancel</button>
           </div>
@@ -1388,7 +1542,7 @@ export default function Resolutions() {
     <div className="container">
       <div className="top-bar">
         <div>
-          <p style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'2px', color:'var(--accent)', marginBottom:6 }}>
+          <p style={{ fontSize:11, fontWeight:500, textTransform:'uppercase', letterSpacing:'2px', color:'var(--accent)', marginBottom:6 }}>
             {profile?.committee} · Drafting
           </p>
           <h1 className="delegation-brand">{isChair ? 'Chair Overwatch' : 'Resolutions'}</h1>
@@ -1416,12 +1570,12 @@ export default function Resolutions() {
               <div style={{ display:'flex', alignItems:'flex-start', gap:12 }}>
                 <div style={{ width:36, height:36, background:'var(--accent-soft)', borderRadius:10, display:'flex', alignItems:'center', justifyContent:'center', color:'var(--accent)', flexShrink:0 }}><IconFile /></div>
                 <div style={{ flex:1, minWidth:0 }}>
-                  <h3 style={{ fontSize:14, fontWeight:700, color:'var(--text-primary)', marginBottom:4, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.title}</h3>
-                  <span style={{ fontSize:11, color:'var(--accent)', fontWeight:600 }}>{r.blocs?.name || 'Independent'}</span>
+                  <h3 style={{ fontSize:14, fontWeight:500, color:'var(--text-primary)', marginBottom:4, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.title}</h3>
+                  <span style={{ fontSize:11, color:'var(--accent)', fontWeight:500 }}>{r.blocs?.name || 'Independent'}</span>
                 </div>
               </div>
               <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                <span style={{ fontSize:10, fontWeight:800, padding:'2px 8px', borderRadius:99, background:`${statusColor(r.status||'draft')}18`, color:statusColor(r.status||'draft') }}>
+                <span style={{ fontSize:10, fontWeight:600, padding:'2px 8px', borderRadius:99, background:`${statusColor(r.status||'draft')}18`, color:statusColor(r.status||'draft') }}>
                   {statusLabel(r.status||'draft')}
                 </span>
                 {r.updated_at && <span style={{ fontSize:10, color:'var(--text-muted)', fontWeight:500 }}>Edited {timeAgo(r.updated_at)}</span>}

@@ -11,10 +11,10 @@ type UserProfile = {
 type AuthContextType = {
   user: UserProfile | null;
   loading: boolean;
-  logout: () => void;
+  logout: () => Promise<void>;
 };
 
-const AuthContext = createContext<AuthContextType>({ user: null, loading: true, logout: () => {} });
+const AuthContext = createContext<AuthContextType>({ user: null, loading: true, logout: async () => {} });
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -46,14 +46,31 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     });
 
     // Listen for login/logout
+    // Supabase holds an auth lock while this callback runs; querying inside it
+    // can deadlock the client (signOut then never resolves). Defer the fetch.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      fetchProfile(session?.user);
+      setTimeout(() => fetchProfile(session?.user), 0);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  const logout = async () => await supabase.auth.signOut();
+  // Sign out everywhere, drop any cached session, and leave the app shell.
+  const logout = async () => {
+    try {
+      await supabase.auth.signOut({ scope: 'global' });
+    } catch {
+      await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+    }
+    try {
+      Object.keys(localStorage)
+        .filter(k => k.startsWith('sb-') || k === 'sodmun_last_reso_id')
+        .forEach(k => localStorage.removeItem(k));
+      sessionStorage.clear();
+    } catch {}
+    setUser(null);
+    window.location.replace('/login');
+  };
 
   return (
     <AuthContext.Provider value={{ user, loading, logout }}>

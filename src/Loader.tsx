@@ -23,7 +23,7 @@ const StyledWrapper = styled.div`
     transform: translate(-50%, -50%) rotate(45deg);
     height: 100%;
     width: 3px;
-    background: rgba(0, 0, 0, 0.18);
+    background: rgba(var(--tint),0.18);
     left: 50%;
     top: 50%;
     border-radius: 2px;
@@ -36,9 +36,9 @@ const StyledWrapper = styled.div`
     bottom: 0.18em;
     width: 1em;
     height: 1em;
-    background-color: #F07C00;
+    background-color: var(--accent);
     border-radius: 15%;
-    box-shadow: 0 4px 12px rgba(240, 124, 0, 0.35);
+    box-shadow: 0 4px 12px rgba(34,164,87, 0.35);
     animation: rollingRock 2.5s cubic-bezier(.79, 0, .47, .97) infinite;
   }
 

@@ -21,6 +21,7 @@ import {
   createPoll, closePoll, deletePoll, getPolls, getPollVotes, castVote, removeVote, type PollOption,
   uploadAnnouncementPhoto,
 } from './committeeApi';
+import { pingCommittee } from './live';
 
 const ANNOUNCEMENTS_ROOM = '__announcements__';
 
@@ -93,21 +94,21 @@ function PollModal({ onClose, onCreated }: { onClose: () => void; onCreated: () 
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.55)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{ background:'var(--bg-elevated)', border:'1px solid var(--border)', borderRadius:18, padding:24, width:'100%', maxWidth:480, boxShadow:'var(--shadow-xl)', maxHeight:'85vh', overflowY:'auto' }}>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:18 }}>
-          <h3 style={{ fontSize:17, fontWeight:800, color:'var(--text-primary)', display:'flex', alignItems:'center', gap:8, margin:0 }}>
+          <h3 style={{ fontSize:17, fontWeight:600, color:'var(--text-primary)', display:'flex', alignItems:'center', gap:8, margin:0 }}>
             <IconPoll /> New Poll
           </h3>
           <button onClick={onClose} style={{ background:'transparent', border:'none', cursor:'pointer', color:'var(--text-muted)', padding:4 }}><IconX /></button>
         </div>
 
-        <label style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.6px', color:'var(--text-muted)', display:'block', marginBottom:6 }}>Question</label>
+        <label style={{ fontSize:11, fontWeight:500, textTransform:'uppercase', letterSpacing:'0.6px', color:'var(--text-muted)', display:'block', marginBottom:6 }}>Question</label>
         <input
           value={question}
           onChange={e => setQuestion(e.target.value)}
           placeholder="e.g. Should we extend lunch by 15 minutes?"
-          style={{ width:'100%', padding:'10px 12px', borderRadius:9, border:'1px solid var(--border)', background:'var(--bg-input)', color:'var(--text-primary)', fontSize:14, fontFamily:'Manrope,sans-serif', outline:'none', boxSizing:'border-box', marginBottom:16 }}
+          style={{ width:'100%', padding:'10px 12px', borderRadius:9, border:'1px solid var(--border)', background:'var(--bg-input)', color:'var(--text-primary)', fontSize:14, fontFamily:'var(--sans)', outline:'none', boxSizing:'border-box', marginBottom:16 }}
         />
 
-        <label style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.6px', color:'var(--text-muted)', display:'block', marginBottom:6 }}>Options</label>
+        <label style={{ fontSize:11, fontWeight:500, textTransform:'uppercase', letterSpacing:'0.6px', color:'var(--text-muted)', display:'block', marginBottom:6 }}>Options</label>
         <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:10 }}>
           {options.map((opt, i) => (
             <div key={i} style={{ display:'flex', gap:8, alignItems:'center' }}>
@@ -115,7 +116,7 @@ function PollModal({ onClose, onCreated }: { onClose: () => void; onCreated: () 
                 value={opt}
                 onChange={e => updateOption(i, e.target.value)}
                 placeholder={`Option ${i + 1}`}
-                style={{ flex:1, padding:'9px 12px', borderRadius:8, border:'1px solid var(--border)', background:'var(--bg-input)', color:'var(--text-primary)', fontSize:13, fontFamily:'Manrope,sans-serif', outline:'none' }}
+                style={{ flex:1, padding:'9px 12px', borderRadius:8, border:'1px solid var(--border)', background:'var(--bg-input)', color:'var(--text-primary)', fontSize:13, fontFamily:'var(--sans)', outline:'none' }}
               />
               {options.length > 2 && (
                 <button onClick={() => removeOption(i)} style={{ background:'transparent', border:'none', cursor:'pointer', color:'var(--text-muted)', padding:4, flexShrink:0 }}><IconX /></button>
@@ -124,12 +125,12 @@ function PollModal({ onClose, onCreated }: { onClose: () => void; onCreated: () 
           ))}
         </div>
         {options.length < 8 && (
-          <button onClick={addOption} style={{ display:'flex', alignItems:'center', gap:6, fontSize:12, fontWeight:700, color:'var(--accent)', background:'transparent', border:'none', cursor:'pointer', padding:'4px 0', marginBottom:16 }}>
+          <button onClick={addOption} style={{ display:'flex', alignItems:'center', gap:6, fontSize:12, fontWeight:500, color:'var(--accent)', background:'transparent', border:'none', cursor:'pointer', padding:'4px 0', marginBottom:16 }}>
             <IconPlus /> Add option
           </button>
         )}
 
-        <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, color:'var(--text-secondary)', fontWeight:600, marginBottom:20, cursor:'pointer' }}>
+        <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, color:'var(--text-secondary)', fontWeight:500, marginBottom:20, cursor:'pointer' }}>
           <input type="checkbox" checked={multiSelect} onChange={e => setMultiSelect(e.target.checked)} style={{ width:16, height:16, accentColor:'var(--accent)' }} />
           Allow selecting multiple options
         </label>
@@ -139,10 +140,10 @@ function PollModal({ onClose, onCreated }: { onClose: () => void; onCreated: () 
           disabled={!canCreate || creating}
           style={{
             width:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:8,
-            fontSize:13, fontWeight:700, padding:'11px', borderRadius:10, border:'none',
+            fontSize:13, fontWeight:500, padding:'11px', borderRadius:10, border:'none',
             cursor: canCreate && !creating ? 'pointer' : 'not-allowed',
             background:'var(--accent)', color:'#fff', opacity: canCreate && !creating ? 1 : 0.5,
-            fontFamily:'Manrope,sans-serif', boxShadow:'0 2px 8px rgba(240,124,0,0.25)',
+            fontFamily:'var(--sans)', boxShadow:'0 2px 8px rgba(34,164,87,0.25)',
           }}
         >
           <IconPoll /> {creating ? 'Creating…' : 'Create Poll'}
@@ -228,7 +229,7 @@ function PollCard({ poll, authUserId, isAdmin, onChanged }: { poll: any; authUse
             <IconPoll />
           </div>
           <div style={{ flex:1, minWidth:0 }}>
-            <p style={{ fontSize:15, fontWeight:700, color:'var(--text-primary)', margin:0, lineHeight:1.4 }}>{poll.question}</p>
+            <p style={{ fontSize:15, fontWeight:500, color:'var(--text-primary)', margin:0, lineHeight:1.4 }}>{poll.question}</p>
             <p style={{ fontSize:11, color:'var(--text-muted)', fontWeight:500, marginTop:4 }}>
               {isAdmin && `${totalVoters} ${totalVoters === 1 ? 'vote' : 'votes'} · `}{poll.closed ? 'Closed' : (poll.multi_select ? 'Choose any' : 'Choose one')}
             </p>
@@ -264,7 +265,7 @@ function PollCard({ poll, authUserId, isAdmin, onChanged }: { poll: any; authUse
                 position:'relative', textAlign:'left', padding:'10px 14px', borderRadius:10,
                 border: selected ? '1.5px solid var(--accent)' : '1px solid var(--border)',
                 background:'var(--bg-surface)', cursor: poll.closed ? 'default' : 'pointer',
-                overflow:'hidden', fontFamily:'Manrope,sans-serif',
+                overflow:'hidden', fontFamily:'var(--sans)',
               }}
             >
               {/* Fill bar — admin only */}
@@ -274,10 +275,10 @@ function PollCard({ poll, authUserId, isAdmin, onChanged }: { poll: any; authUse
                 transition:'width 0.3s ease', zIndex:0,
               }} />}
               <div style={{ position:'relative', zIndex:1, display:'flex', alignItems:'center', justifyContent:'space-between', gap:10 }}>
-                <span style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, fontWeight:600, color: selected ? 'var(--accent)' : 'var(--text-primary)' }}>
+                <span style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, fontWeight:500, color: selected ? 'var(--accent)' : 'var(--text-primary)' }}>
                   {selected && <IconCheck />} {opt.label}
                 </span>
-                {isAdmin && <span style={{ fontSize:12, fontWeight:700, color:'var(--text-muted)', flexShrink:0 }}>{pct}% · {count}</span>}
+                {isAdmin && <span style={{ fontSize:12, fontWeight:500, color:'var(--text-muted)', flexShrink:0 }}>{pct}% · {count}</span>}
               </div>
             </button>
           );
@@ -420,7 +421,7 @@ const RichComposer = React.forwardRef<{ insertImage: (url: string) => void }, {
       {/* ── Editable surface ── */}
       <div style={{ position:'relative' }}>
         {isEmpty && (
-          <span style={{ position:'absolute', top:12, left:14, fontSize:14, color:'var(--text-muted)', pointerEvents:'none', fontFamily:'Manrope,sans-serif' }}>
+          <span style={{ position:'absolute', top:12, left:14, fontSize:14, color:'var(--text-muted)', pointerEvents:'none', fontFamily:'var(--sans)' }}>
             {placeholder}
           </span>
         )}
@@ -435,7 +436,7 @@ const RichComposer = React.forwardRef<{ insertImage: (url: string) => void }, {
           className="announcement-editor"
           style={{
             minHeight:96, maxHeight:320, overflowY:'auto', padding:'12px 14px',
-            fontSize:14, lineHeight:1.6, color:'var(--text-primary)', fontFamily:'Manrope,sans-serif',
+            fontSize:14, lineHeight:1.6, color:'var(--text-primary)', fontFamily:'var(--sans)',
             outline:'none', wordBreak:'break-word',
           }}
         />
@@ -623,6 +624,7 @@ export default function Announcements() {
       setDraft('');
       await loadAnnouncements();
       triggerImmediatePoll(); // nudge other users' polls to catch this faster
+      pingCommittee();
     } catch (e) {
       console.error('Failed to post announcement:', e);
     }
@@ -671,7 +673,7 @@ export default function Announcements() {
   if (loading) {
     return (
       <div style={{ height:'100vh', display:'flex', alignItems:'center', justifyContent:'center' }}>
-        <p style={{ color:'var(--text-muted)', fontSize:13, fontWeight:600 }}>Loading announcements…</p>
+        <p style={{ color:'var(--text-muted)', fontSize:13, fontWeight:500 }}>Loading announcements…</p>
       </div>
     );
   }
@@ -683,14 +685,14 @@ export default function Announcements() {
           <h1 className="delegation-brand" style={{ display:'flex', alignItems:'center', gap:10 }}>
             <IconMegaphone /> Announcements
           </h1>
-          <p style={{ color:'var(--accent)', fontWeight:600, fontSize:'12px', marginTop:'4px' }}>
+          <p style={{ color:'var(--accent)', fontWeight:500, fontSize:'12px', marginTop:'4px' }}>
             Platform-wide · visible to every committee
           </p>
         </div>
         {isAdmin && (
           <button
             onClick={() => setShowPollModal(true)}
-            style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, fontWeight:700, padding:'9px 16px', borderRadius:10, border:'1px solid var(--border)', background:'var(--bg-elevated)', color:'var(--text-primary)', cursor:'pointer', fontFamily:'Manrope,sans-serif' }}
+            style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, fontWeight:500, padding:'9px 16px', borderRadius:10, border:'1px solid var(--border)', background:'var(--bg-elevated)', color:'var(--text-primary)', cursor:'pointer', fontFamily:'var(--sans)' }}
           >
             <IconPoll /> New Poll
           </button>
@@ -718,10 +720,10 @@ export default function Announcements() {
               onClick={handlePost}
               disabled={!hasContent(draft) || sending}
               style={{
-                display:'flex', alignItems:'center', gap:8, fontSize:13, fontWeight:700,
+                display:'flex', alignItems:'center', gap:8, fontSize:13, fontWeight:500,
                 padding:'9px 18px', borderRadius:10, border:'none', cursor: hasContent(draft) && !sending ? 'pointer' : 'not-allowed',
                 background:'var(--accent)', color:'#fff', opacity: hasContent(draft) && !sending ? 1 : 0.5,
-                fontFamily:'Manrope,sans-serif', boxShadow:'0 2px 8px rgba(240,124,0,0.25)',
+                fontFamily:'var(--sans)', boxShadow:'0 2px 8px rgba(34,164,87,0.25)',
               }}
             >
               <IconSend /> {sending ? 'Posting…' : 'Post Announcement'}
@@ -735,7 +737,7 @@ export default function Announcements() {
         {feedItems.length === 0 && (
           <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:8, color:'var(--text-muted)' }}>
             <IconMegaphone />
-            <p style={{ fontSize:13, fontWeight:600 }}>No announcements yet</p>
+            <p style={{ fontSize:13, fontWeight:500 }}>No announcements yet</p>
           </div>
         )}
         {feedItems.map(item => {
@@ -753,7 +755,7 @@ export default function Announcements() {
                   <div style={{ width:26, height:26, borderRadius:8, background:'var(--accent-soft)', display:'flex', alignItems:'center', justifyContent:'center', color:'var(--accent)', flexShrink:0 }}>
                     <IconMegaphone />
                   </div>
-                  <span style={{ fontSize:12, fontWeight:700, color:'var(--text-primary)' }}>
+                  <span style={{ fontSize:12, fontWeight:500, color:'var(--text-primary)' }}>
                     {a.users?.role === 'Admin' ? 'Admin' : (a.users?.delegation || a.users?.role || 'Organizer')}
                   </span>
                 </div>
@@ -794,7 +796,7 @@ export default function Announcements() {
           color: var(--text-muted); font-style: italic;
         }
         .announcement-editor a, .announcement-content a { color: var(--accent); text-decoration: underline; }
-        .announcement-editor strong, .announcement-content strong { font-weight: 800; }
+        .announcement-editor strong, .announcement-content strong { font-weight: 600; }
         .announcement-content img { max-width: 100%; border-radius: 10px; display: block; margin: 8px 0; }
       `}</style>
     </div>

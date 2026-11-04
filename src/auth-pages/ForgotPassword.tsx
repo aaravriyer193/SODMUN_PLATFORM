@@ -4,6 +4,7 @@
 // generates a token and sends via Loops.
 
 import React, { useState } from 'react';
+import AuthLayout from './AuthLayout';
 
 const FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/forgot-password`;
 
@@ -33,10 +34,7 @@ export default function ForgotPassword() {
   };
 
   return (
-    <div style={styles.page}>
-      <div style={styles.card}>
-        <div style={styles.logo}>SODMUN</div>
-        <div style={styles.bar} />
+    <AuthLayout>
 
         {status !== 'sent' ? (
           <>
@@ -48,15 +46,18 @@ export default function ForgotPassword() {
             </p>
 
             <form onSubmit={handleSubmit} style={styles.form}>
-              <input
-                type="email"
-                placeholder="Your email address"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                style={styles.input}
-                autoComplete="email"
-                required
-              />
+              <label style={styles.field}>
+                <span style={styles.fieldLabel}>Email</span>
+                <input
+                  type="email"
+                  placeholder="you@school.edu"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  style={styles.input}
+                  autoComplete="email"
+                  required
+                />
+              </label>
               <button
                 type="submit"
                 disabled={status === 'loading'}
@@ -66,7 +67,7 @@ export default function ForgotPassword() {
               </button>
             </form>
 
-            <a href="https://app.sodmun.com/login" style={styles.back}>
+            <a href="/login" style={styles.back}>
               Back to login
             </a>
           </>
@@ -79,40 +80,41 @@ export default function ForgotPassword() {
             </p>
           </>
         )}
-      </div>
-    </div>
+    </AuthLayout>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
+  field: { display:'flex', flexDirection:'column', gap:8, width:'100%' },
+  fieldLabel: { fontSize:12, fontWeight:500, color:'var(--text-secondary)', letterSpacing:'0.01em' },
   page: {
     minHeight: '100vh', width: '100vw',
-    background: 'linear-gradient(135deg, #F5F3EF 0%, #FEF3E6 100%)',
+    background: 'linear-gradient(135deg, var(--bg) 0%, var(--bg-2) 100%)',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    fontFamily: "'Manrope', sans-serif", padding: 20,
+    fontFamily:'var(--sans)', padding: 20,
   },
   card: {
-    background: '#fff', borderRadius: 20,
+    background: 'var(--bg-2)', border:'1px solid var(--border)', borderRadius: 20,
     padding: '48px 44px', width: '100%', maxWidth: 400,
-    boxShadow: '0 8px 40px rgba(0,0,0,0.10)',
+    boxShadow: 'var(--shadow-lg)',
     display: 'flex', flexDirection: 'column', alignItems: 'center',
     textAlign: 'center',
   },
   logo: {
-    fontFamily: "'JetBrains Mono', monospace",
-    fontSize: 13, fontWeight: 700, letterSpacing: 5,
-    color: '#F07C00', marginBottom: 20, textTransform: 'uppercase',
+    fontFamily:'var(--mono)',
+    fontSize: 13, fontWeight: 500, letterSpacing: 5,
+    color: 'var(--accent)', marginBottom: 20, textTransform: 'uppercase',
   },
   bar: {
-    width: 36, height: 3, background: '#F07C00',
+    width: 36, height: 3, background: 'var(--accent)',
     borderRadius: 99, marginBottom: 28,
   },
   title: {
-    fontSize: 24, fontWeight: 800, color: '#18181B',
+    fontSize: 48, fontWeight: 400, color: 'var(--text-primary)',
     letterSpacing: '-0.5px', marginBottom: 10,
   },
   sub: {
-    fontSize: 14, color: '#71717A', fontWeight: 400,
+    fontSize: 14, color: 'var(--text-muted)', fontWeight: 400,
     lineHeight: 1.6, marginBottom: 28,
   },
   form: {
@@ -120,25 +122,24 @@ const styles: Record<string, React.CSSProperties> = {
   },
   input: {
     width: '100%', padding: '13px 16px',
-    border: '1px solid rgba(0,0,0,0.12)',
+    border: '1px solid rgba(var(--tint),0.12)',
     borderRadius: 12, fontSize: 14, fontWeight: 500,
-    fontFamily: "'Manrope', sans-serif",
-    outline: 'none', color: '#18181B', background: '#FAFAF8',
+    fontFamily:'var(--sans)',
+    outline: 'none', color: 'var(--text-primary)', background: 'var(--bg-2)',
   },
   btn: {
     width: '100%', height: 48,
-    background: '#F07C00', color: '#fff',
-    border: 'none', borderRadius: 12,
-    fontSize: 14, fontWeight: 700,
-    fontFamily: "'Manrope', sans-serif",
+    background: 'var(--accent)', color: '#fff',
+    border: 'none', borderRadius: 99,
+    fontSize: 14, fontWeight: 500,
+    fontFamily:'var(--sans)',
     cursor: 'pointer', marginTop: 4,
-    boxShadow: '0 4px 14px rgba(240,124,0,0.28)',
   },
   back: {
-    fontSize: 13, color: '#A1A1AA',
-    fontWeight: 600, textDecoration: 'none', marginTop: 20,
+    fontSize: 13, color: 'var(--text-muted)',
+    fontWeight: 500, textDecoration: 'none', marginTop: 20,
   },
   sentIcon: {
-    fontSize: 32, marginBottom: 16, color: '#F07C00',
+    fontSize: 32, marginBottom: 16, color: 'var(--accent)',
   },
 };

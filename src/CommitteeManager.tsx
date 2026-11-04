@@ -5,6 +5,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from './AuthContext';
 
 import { getCommitteeMembers, addToBlocApi, removeFromBlocApi, bustSidebarCache, lockRoom } from './committeeApi';
+import { pingCommittee } from './live';
 import { supabase } from './api';
 
 const IconPause  = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="6" y1="4" x2="6" y2="20"/><line x1="18" y1="4" x2="18" y2="20"/></svg>;
@@ -91,6 +92,7 @@ export default function CommitteeManager() {
     const isLocked = lockedRooms.has(roomId);
     try {
       await lockRoom(roomId, !isLocked);
+      pingCommittee();
       setLockedRooms(prev => {
         const next = new Set(prev);
         if (isLocked) next.delete(roomId); else next.add(roomId);
@@ -107,6 +109,7 @@ export default function CommitteeManager() {
     setAllBusy(true);
     try {
       await Promise.all(rooms.map(r => lockRoom(r.id, targetLocked)));
+      pingCommittee();
       setLockedRooms(() => {
         if (targetLocked) return new Set(rooms.map(r => r.id));
         return new Set();
@@ -137,7 +140,7 @@ export default function CommitteeManager() {
         .cm-bloc-card { background:var(--bg-elevated); border:1px solid var(--border); border-radius:16px; padding:20px; margin-bottom:16px; }
         .cm-del-row { display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--border); }
         .cm-del-row:last-child { border-bottom:none; }
-        .cm-tag { font-size:10px; font-weight:700; padding:2px 8px; border-radius:99px; }
+        .cm-tag { font-size:10px; font-weight:500; padding:2px 8px; border-radius:99px; }
         .cm-btn { border:none; cursor:pointer; border-radius:8px; width:28px; height:28px; display:flex; align-items:center; justify-content:center; transition:all 0.12s; }
         .cm-btn-add { background:rgba(34,197,94,0.12); color:#16A34A; }
         .cm-btn-add:hover { background:rgba(34,197,94,0.22); }
@@ -150,7 +153,7 @@ export default function CommitteeManager() {
       {/* Header */}
       <div className="top-bar">
         <div>
-          <p style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'2px', color:'var(--accent)', marginBottom:6 }}>Chair · Committee</p>
+          <p style={{ fontSize:11, fontWeight:500, textTransform:'uppercase', letterSpacing:'2px', color:'var(--accent)', marginBottom:6 }}>Chair · Committee</p>
           <h1 className="delegation-brand">Committee Manager</h1>
         </div>
         <button
@@ -200,16 +203,16 @@ export default function CommitteeManager() {
                 return (
                   <div key={d.id} className="cm-del-row">
                     <div style={{ flex:1, minWidth:0 }}>
-                      <p style={{ fontSize:13, fontWeight:700, color:'var(--text-primary)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{d.delegation}</p>
+                      <p style={{ fontSize:13, fontWeight:500, color:'var(--text-primary)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{d.delegation}</p>
                       <p style={{ fontSize:11, color:'var(--text-muted)', fontWeight:500 }}>{d.email}</p>
                     </div>
                     {/* Bloc tags */}
                     <div style={{ display:'flex', gap:4, flexWrap:'wrap', justifyContent:'flex-end', maxWidth:160 }}>
                       {dBlocs.length === 0
-                        ? <span className="cm-tag" style={{ background:'rgba(0,0,0,0.06)', color:'var(--text-muted)' }}>Unassigned</span>
+                        ? <span className="cm-tag" style={{ background:'rgba(var(--tint),0.06)', color:'var(--text-muted)' }}>Unassigned</span>
                         : dBlocs.map(b => (
                           <div key={b.id} style={{ display:'flex', alignItems:'center', gap:3, background:'var(--accent-soft)', border:'1px solid var(--accent-mid)', borderRadius:99, padding:'2px 8px 2px 6px' }}>
-                            <span style={{ fontSize:10, fontWeight:700, color:'var(--accent)' }}>{b.name}</span>
+                            <span style={{ fontSize:10, fontWeight:500, color:'var(--accent)' }}>{b.name}</span>
                             <button
                               className="cm-btn cm-btn-rem"
                               style={{ width:18, height:18, borderRadius:4 }}
@@ -245,12 +248,12 @@ export default function CommitteeManager() {
             {/* Unassigned */}
             {unassigned.length > 0 && (
               <div className="cm-bloc-card" style={{ borderColor:'rgba(220,38,38,0.20)', background:'rgba(220,38,38,0.04)' }}>
-                <p style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'2px', color:'#DC2626', marginBottom:12 }}>
+                <p style={{ fontSize:11, fontWeight:500, textTransform:'uppercase', letterSpacing:'2px', color:'#DC2626', marginBottom:12 }}>
                   Unassigned ({unassigned.length})
                 </p>
                 {unassigned.map(d => (
                   <div key={d.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 0', borderBottom:'1px solid rgba(220,38,38,0.10)' }}>
-                    <span style={{ flex:1, fontSize:13, fontWeight:600, color:'var(--text-primary)' }}>{d.delegation}</span>
+                    <span style={{ flex:1, fontSize:13, fontWeight:500, color:'var(--text-primary)' }}>{d.delegation}</span>
                     <select
                       className="dark-input"
                       style={{ width:130, margin:0, fontSize:11, padding:'5px 10px', minHeight:30 }}
@@ -271,10 +274,10 @@ export default function CommitteeManager() {
               return (
                 <div key={b.id} className="cm-bloc-card">
                   <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
-                    <p style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'2px', color:'var(--accent)' }}>
+                    <p style={{ fontSize:11, fontWeight:500, textTransform:'uppercase', letterSpacing:'2px', color:'var(--accent)' }}>
                       {b.name}
                     </p>
-                    <span style={{ fontSize:11, color:'var(--text-muted)', fontWeight:600 }}>
+                    <span style={{ fontSize:11, color:'var(--text-muted)', fontWeight:500 }}>
                       {bMembers.length} delegate{bMembers.length !== 1 ? 's' : ''}
                     </span>
                   </div>
@@ -282,7 +285,7 @@ export default function CommitteeManager() {
                     ? <p style={{ fontSize:12, color:'var(--text-muted)' }}>No delegates yet</p>
                     : bMembers.map(d => (
                       <div key={d.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 0', borderBottom:'1px solid var(--border)' }}>
-                        <span style={{ flex:1, fontSize:13, fontWeight:600, color:'var(--text-primary)' }}>{d.delegation}</span>
+                        <span style={{ flex:1, fontSize:13, fontWeight:500, color:'var(--text-primary)' }}>{d.delegation}</span>
                         <button
                           className="cm-btn cm-btn-rem"
                           disabled={busy === `rem-${d.id}-${b.id}`}
@@ -301,7 +304,7 @@ export default function CommitteeManager() {
           <div className="cm-bloc-card">
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
               <div>
-                <p style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'2px', color:'var(--text-secondary)' }}>
+                <p style={{ fontSize:11, fontWeight:500, textTransform:'uppercase', letterSpacing:'2px', color:'var(--text-secondary)' }}>
                   Chat Channels
                 </p>
                 <p style={{ fontSize:10, color:'var(--text-muted)', fontWeight:500, marginTop:2 }}>Pause to disable delegate messaging</p>
@@ -311,9 +314,9 @@ export default function CommitteeManager() {
                 disabled={allBusy || rooms.length === 0}
                 style={{
                   display:'flex', alignItems:'center', gap:6,
-                  fontSize:11, fontWeight:700, padding:'7px 14px', borderRadius:9,
+                  fontSize:11, fontWeight:500, padding:'7px 14px', borderRadius:9,
                   border:'1px solid', cursor: allBusy ? 'not-allowed' : 'pointer',
-                  fontFamily:'Manrope,sans-serif', transition:'all 0.15s',
+                  fontFamily:'var(--sans)', transition:'all 0.15s',
                   background: allBusy ? 'var(--bg-surface)'
                     : rooms.every(r => lockedRooms.has(r.id)) ? 'rgba(34,197,94,0.10)'
                     : 'rgba(220,38,38,0.08)',
@@ -347,11 +350,11 @@ export default function CommitteeManager() {
                   <span style={{ color: isLocked ? '#DC2626' : 'var(--accent)', flexShrink:0 }}>
                     {room.type === 'global' ? <IconGlobe /> : <IconLockSm />}
                   </span>
-                  <span style={{ flex:1, fontSize:13, fontWeight:600, color: isLocked ? '#DC2626' : 'var(--text-primary)' }}>
+                  <span style={{ flex:1, fontSize:13, fontWeight:500, color: isLocked ? '#DC2626' : 'var(--text-primary)' }}>
                     {room.name}
                   </span>
                   {isLocked && (
-                    <span style={{ fontSize:9, fontWeight:800, textTransform:'uppercase', letterSpacing:'1px', color:'#DC2626', background:'rgba(220,38,38,0.08)', border:'1px solid rgba(220,38,38,0.20)', borderRadius:99, padding:'2px 8px' }}>
+                    <span style={{ fontSize:9, fontWeight:600, textTransform:'uppercase', letterSpacing:'1px', color:'#DC2626', background:'rgba(220,38,38,0.08)', border:'1px solid rgba(220,38,38,0.20)', borderRadius:99, padding:'2px 8px' }}>
                       Paused
                     </span>
                   )}
@@ -360,9 +363,9 @@ export default function CommitteeManager() {
                     disabled={isBusy}
                     style={{
                       display:'flex', alignItems:'center', gap:5,
-                      fontSize:11, fontWeight:700, padding:'6px 12px', borderRadius:8,
+                      fontSize:11, fontWeight:500, padding:'6px 12px', borderRadius:8,
                       border:'1px solid', cursor: isBusy ? 'not-allowed' : 'pointer',
-                      fontFamily:'Manrope,sans-serif', transition:'all 0.15s',
+                      fontFamily:'var(--sans)', transition:'all 0.15s',
                       background: isBusy ? 'var(--bg-surface)' : isLocked ? 'rgba(34,197,94,0.10)' : 'rgba(220,38,38,0.08)',
                       color: isBusy ? 'var(--text-muted)' : isLocked ? '#16A34A' : '#DC2626',
                       borderColor: isBusy ? 'var(--border)' : isLocked ? 'rgba(34,197,94,0.25)' : 'rgba(220,38,38,0.22)',

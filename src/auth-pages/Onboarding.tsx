@@ -6,6 +6,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../api';
 import { useAuth } from '../AuthContext';
+import AuthLayout from './AuthLayout';
 
 interface Step {
   tag:   string;
@@ -18,29 +19,29 @@ interface Step {
 const STEPS: Step[] = [
   {
     tag:   '01 — Welcome',
-    title: <>Welcome to <span style={{ color:'#F07C00' }}>SODMUN</span></>,
+    title: <>Welcome to <span style={{ color:'var(--accent)' }}>SODMUN</span></>,
     body:  'This is your committee platform. Everything you need — communications, blocs, resolutions — is right here. This will take about 60 seconds.',
     cta:   'Get started',
     visual: <PlatformVisual />,
   },
   {
     tag:   '02 — Communications',
-    title: <>Chat with your <span style={{ color:'#F07C00' }}>committee</span></>,
+    title: <>Chat with your <span style={{ color:'var(--accent)' }}>committee</span></>,
     body:  'The Communications tab is your main hub. You can message the global committee, join or create a private bloc group chat, and send direct messages to any delegate. Chairs can read everything.',
     cta:   'Got it',
     visual: <ChatVisual />,
   },
   {
     tag:   '03 — Blocs',
-    title: <>Form a <span style={{ color:'#F07C00' }}>bloc</span></>,
+    title: <>Form a <span style={{ color:'var(--accent)' }}>bloc</span></>,
     body:  'Coordinate privately with allied delegations. Go to Chat → New Bloc Group Chat, name it, and add your allies. Draft your working paper together from there.',
     cta:   'Understood',
     visual: <BlocVisual />,
   },
   {
     tag:   '04 — Ready',
-    title: <>You\'re all <span style={{ color:'#F07C00' }}>set</span></>,
-    body:  'If you ever forget your password, go to app.sodmun.com/forgot — you\'ll get a reset link by email. Good luck in committee.',
+    title: <>You\'re all <span style={{ color:'var(--accent)' }}>set</span></>,
+    body:  'If you ever forget your password, use "Forgot password?" on the sign-in page — you\'ll get a reset link by email. Good luck in committee.',
     cta:   'Enter the platform',
     visual: <ReadyVisual />,
   },
@@ -55,15 +56,16 @@ export default function Onboarding() {
   const current = STEPS[step];
   const isLast  = step === STEPS.length - 1;
 
-  const advance = async () => {
-    if (isLast) {
-      setFinishing(true);
-      if (user) {
-        await supabase.from('users').update({ onboarded: true }).eq('id', user.id);
-      }
-      window.location.href = 'https://app.sodmun.com';
-      return;
+  const finish = async () => {
+    setFinishing(true);
+    if (user) {
+      await supabase.from('users').update({ onboarded: true }).eq('id', user.id);
     }
+    window.location.href = '/';
+  };
+
+  const advance = async () => {
+    if (isLast) return finish();
     setLeaving(true);
     setTimeout(() => {
       setStep(s => s + 1);
@@ -71,38 +73,42 @@ export default function Onboarding() {
     }, 300);
   };
 
+  const back = () => { if (step > 0 && !leaving) setStep(s => s - 1); };
+
   return (
-    <div style={styles.page}>
+    <AuthLayout photo="atrium">
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=JetBrains+Mono:wght@700&display=swap');
-        @keyframes slideIn  { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
-        @keyframes slideOut { from { opacity:1; transform:translateY(0); } to { opacity:0; transform:translateY(-20px); } }
-        .step-content { animation: slideIn 0.35s cubic-bezier(0.4,0,0.2,1) both; }
-        .step-content.leaving { animation: slideOut 0.3s cubic-bezier(0.4,0,0.2,1) both; }
+        @keyframes slideIn  { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:none; } }
+        @keyframes slideOut { from { opacity:1; transform:none; } to { opacity:0; transform:translateY(-14px); } }
+        .step-content { animation: slideIn .5s var(--ease-out) both; }
+        .step-content.leaving { animation: slideOut .3s var(--ease) both; }
+        .ob-skip { background:none; border:0; padding:0; font-size:13px; color:var(--text-muted); cursor:pointer; }
+        .ob-skip:hover { color:var(--text-primary); }
       `}</style>
 
-      {/* Progress bar */}
-      <div style={styles.progressWrap}>
+      {/* Progress */}
+      <div style={styles.progressWrap} aria-label={`Step ${step + 1} of ${STEPS.length}`}>
         {STEPS.map((_, i) => (
           <div key={i} style={{
             ...styles.progressDot,
-            background: i <= step ? '#F07C00' : 'rgba(0,0,0,0.10)',
-            width: i === step ? 24 : 8,
+            background: i <= step ? 'var(--accent)' : 'rgba(var(--tint),0.12)',
+            width: i === step ? 28 : 8,
           }} />
         ))}
+        <span style={styles.counter}>{step + 1} / {STEPS.length}</span>
       </div>
 
-      <div className={`step-content${leaving?' leaving':''}`} style={styles.card}>
-        {/* Visual */}
-        <div style={styles.visual}>{current.visual}</div>
-
-        {/* Text */}
+      <div className={`step-content${leaving?' leaving':''}`} key={step}>
         <div style={styles.tag}>{current.tag}</div>
-        <div style={styles.bar} />
         <h1 style={styles.title}>{current.title}</h1>
         <p style={styles.body}>{current.body}</p>
+        <div style={styles.visual}>{current.visual}</div>
+      </div>
 
-        {/* CTA */}
+      <div style={{ display:'flex', alignItems:'center', gap:12, marginTop:8 }}>
+        {step > 0 && (
+          <button type="button" onClick={back} style={styles.btnGhost}>Back</button>
+        )}
         <button
           onClick={advance}
           disabled={finishing}
@@ -111,11 +117,11 @@ export default function Onboarding() {
           {finishing ? 'Loading…' : current.cta}
           {!isLast && <span style={{ marginLeft: 8 }}>→</span>}
         </button>
-
-        {/* Step counter */}
-        <p style={styles.counter}>{step + 1} of {STEPS.length}</p>
+        {!isLast && (
+          <button type="button" className="ob-skip" onClick={finish} disabled={finishing} style={{ marginLeft:'auto' }}>Skip intro</button>
+        )}
       </div>
-    </div>
+    </AuthLayout>
   );
 }
 
@@ -126,9 +132,9 @@ function PlatformVisual() {
     <div style={{ display:'flex', gap:10, alignItems:'center', justifyContent:'center' }}>
       {['Dashboard','Chat','Resolutions','AI'].map(label => (
         <div key={label} style={{
-          background:'rgba(240,124,0,0.08)', border:'1px solid rgba(240,124,0,0.20)',
+          background:'rgba(34,164,87,0.08)', border:'1px solid rgba(34,164,87,0.20)',
           borderRadius:10, padding:'10px 16px',
-          fontSize:12, fontWeight:700, color:'#F07C00', letterSpacing:'0.3px',
+          fontSize:12, fontWeight:500, color:'var(--accent)', letterSpacing:'0.3px',
         }}>{label}</div>
       ))}
     </div>
@@ -145,11 +151,11 @@ function ChatVisual() {
       ].map(r => (
         <div key={r.label} style={{
           display:'flex', alignItems:'center', gap:10,
-          background: r.active ? 'rgba(240,124,0,0.10)' : 'rgba(0,0,0,0.04)',
-          border: `1px solid ${r.active ? 'rgba(240,124,0,0.25)' : 'rgba(0,0,0,0.08)'}`,
+          background: r.active ? 'rgba(34,164,87,0.10)' : 'rgba(var(--tint),0.04)',
+          border: `1px solid ${r.active ? 'rgba(34,164,87,0.25)' : 'rgba(var(--tint),0.08)'}`,
           borderRadius:10, padding:'10px 14px',
-          fontSize:13, fontWeight:600,
-          color: r.active ? '#E07000' : '#71717A',
+          fontSize:13, fontWeight:500,
+          color: r.active ? 'var(--accent-2)' : 'var(--text-muted)',
         }}>
           <span style={{ fontSize:14 }}>{r.icon}</span>
           {r.label}
@@ -163,11 +169,11 @@ function BlocVisual() {
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:8, width:'100%', maxWidth:300 }}>
       <div style={{
-        background:'rgba(240,124,0,0.08)', border:'1.5px dashed rgba(240,124,0,0.30)',
+        background:'rgba(34,164,87,0.08)', border:'1.5px dashed rgba(34,164,87,0.30)',
         borderRadius:12, padding:'14px 18px', textAlign:'center',
       }}>
-        <div style={{ fontSize:12, fontWeight:700, color:'#F07C00', letterSpacing:'0.5px', marginBottom:6 }}>+ New Bloc Group Chat</div>
-        <div style={{ fontSize:11, color:'#A1A1AA', fontWeight:500 }}>Name it · Add allies · Start coordinating</div>
+        <div style={{ fontSize:12, fontWeight:500, color:'var(--accent)', letterSpacing:'0.5px', marginBottom:6 }}>+ New Bloc Group Chat</div>
+        <div style={{ fontSize:11, color:'var(--text-muted)', fontWeight:500 }}>Name it · Add allies · Start coordinating</div>
       </div>
     </div>
   );
@@ -189,65 +195,68 @@ function ReadyVisual() {
 const styles: Record<string, React.CSSProperties> = {
   page: {
     minHeight:'100vh', width:'100vw',
-    background:'linear-gradient(135deg, #F5F3EF 0%, #FEF3E6 100%)',
+    background:'linear-gradient(135deg, var(--bg) 0%, var(--bg-2) 100%)',
     display:'flex', flexDirection:'column',
     alignItems:'center', justifyContent:'center',
-    fontFamily:"'Manrope', sans-serif", padding:'40px 20px',
+    fontFamily:'var(--sans)', padding:'40px 20px',
     position:'relative',
   },
   progressWrap: {
     display:'flex', alignItems:'center', gap:6,
-    marginBottom:32, position:'relative', zIndex:10,
+    marginBottom:40,
   },
   progressDot: {
     height:8, borderRadius:99,
     transition:'all 0.3s cubic-bezier(0.4,0,0.2,1)',
   },
   card: {
-    background:'#fff', borderRadius:24,
+    background:'var(--bg-2)', border:'1px solid var(--border)', borderRadius:24,
     padding:'48px 44px', width:'100%', maxWidth:480,
-    boxShadow:'0 12px 48px rgba(0,0,0,0.10)',
+    boxShadow:'var(--shadow-lg)',
     display:'flex', flexDirection:'column', alignItems:'center',
     textAlign:'center',
   },
   visual: {
-    marginBottom:32,
-    display:'flex', alignItems:'center', justifyContent:'center',
+    marginBottom:36,
+    display:'flex', alignItems:'flex-start', justifyContent:'flex-start',
     width:'100%',
   },
   tag: {
-    fontSize:11, fontWeight:700,
-    letterSpacing:'3px', textTransform:'uppercase',
-    color:'#F07C00', marginBottom:12,
+    fontSize:11.5, fontWeight:400,
+    letterSpacing:'0.08em', textTransform:'uppercase',
+    color:'var(--green-mint)', marginBottom:16,
   },
   bar: {
-    width:32, height:3, background:'#F07C00',
+    width:32, height:3, background:'var(--accent)',
     borderRadius:99, marginBottom:20,
   },
   title: {
-    fontSize:26, fontWeight:800, color:'#18181B',
+    fontSize:52, fontWeight:400, color:'var(--text-primary)',
     letterSpacing:'-0.5px', lineHeight:1.2,
     marginBottom:14,
   },
   body: {
-    fontSize:14, color:'#71717A',
-    fontWeight:400, lineHeight:1.7,
-    marginBottom:32, maxWidth:380,
+    fontSize:15, color:'var(--text-muted)',
+    fontWeight:400, lineHeight:1.6,
+    marginBottom:28, maxWidth:'40ch',
   },
   btn: {
     height:50, padding:'0 32px',
-    background:'#F07C00', color:'#fff',
-    border:'none', borderRadius:14,
-    fontSize:14, fontWeight:700,
-    fontFamily:"'Manrope', sans-serif",
+    background:'var(--accent)', color:'#fff',
+    border:'none', borderRadius:99,
+    fontSize:14, fontWeight:500,
+    fontFamily:'var(--sans)',
     cursor:'pointer',
-    boxShadow:'0 4px 16px rgba(240,124,0,0.30)',
     transition:'all 0.15s',
     display:'flex', alignItems:'center',
   },
   counter: {
-    fontSize:11, color:'#C4C4C4',
-    fontWeight:600, marginTop:20,
-    letterSpacing:'0.5px',
+    fontFamily:'var(--mono)', fontSize:11, color:'var(--text-muted)',
+    marginLeft:10,
+  },
+  btnGhost: {
+    height:50, padding:'0 22px', borderRadius:99, border:0,
+    background:'transparent', boxShadow:'inset 0 0 0 1px var(--border-strong)',
+    color:'var(--text-primary)', fontSize:14, fontWeight:500, cursor:'pointer',
   },
 };

@@ -4,6 +4,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './api';
 import { useAuth } from './AuthContext';
+import AuthLayout from './auth-pages/AuthLayout';
 
 export default function Login() {
   const { user } = useAuth();
@@ -18,7 +19,7 @@ export default function Login() {
 
   // If already logged in, redirect away
   useEffect(() => {
-    if (user) window.location.href = 'https://app.sodmun.com';
+    if (user) window.location.href = '/';
   }, [user]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -45,19 +46,14 @@ export default function Login() {
       .single();
 
     if (profile?.role === 'Delegate' && !profile?.onboarded) {
-      window.location.href = 'https://app.sodmun.com/welcome';
+      window.location.href = '/welcome';
     } else {
-      window.location.href = 'https://app.sodmun.com';
+      window.location.href = '/';
     }
   };
 
   return (
-    <div style={styles.page}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=JetBrains+Mono:wght@700&display=swap');`}</style>
-
-      <div style={styles.card}>
-        <div style={styles.logo}>SODMUN</div>
-        <div style={styles.bar} />
+    <AuthLayout>
 
         {/* Welcome banner — shown after setting password from invite */}
         {welcome && (
@@ -74,27 +70,33 @@ export default function Login() {
         )}
 
         <h1 style={styles.title}>Sign in</h1>
-        <p style={styles.sub}>app.sodmun.com</p>
+        <p style={styles.sub}>Use the email your committee invited. Delegates and chairs sign in here.</p>
 
         <form onSubmit={handleSubmit} style={styles.form}>
-          <input
-            type="email"
-            placeholder="Email address"
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            style={styles.input}
-            autoComplete="email"
-            required
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            style={styles.input}
-            autoComplete="current-password"
-            required
-          />
+          <label style={styles.field}>
+            <span style={styles.fieldLabel}>Email</span>
+            <input
+              type="email"
+              placeholder="you@school.edu"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              style={styles.input}
+              autoComplete="email"
+              required
+            />
+          </label>
+          <label style={styles.field}>
+            <span style={styles.fieldLabel}>Password</span>
+            <input
+              type="password"
+              placeholder="••••••••"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              style={styles.input}
+              autoComplete="current-password"
+              required
+            />
+          </label>
 
           {error && <p style={styles.error}>{error}</p>}
 
@@ -107,35 +109,34 @@ export default function Login() {
           </button>
         </form>
 
-        <a href="https://app.sodmun.com/forgot" style={styles.forgot}>
+        <a href="/forgot" style={styles.forgot}>
           Forgot password?
         </a>
-      </div>
-    </div>
+    </AuthLayout>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
+  field: { display:'flex', flexDirection:'column', gap:8, width:'100%' },
+  fieldLabel: { fontSize:12, fontWeight:500, color:'var(--text-secondary)', letterSpacing:'0.01em' },
   page: {
     minHeight: '100vh', width: '100vw',
     background: 'var(--bg-base)',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    fontFamily: "'Manrope', sans-serif", padding: 20,
+    fontFamily:'var(--sans)', padding: 20,
   },
   card: {
-    background: 'var(--bg-elevated)', borderRadius: 20,
+    background: 'var(--bg-2)', border:'1px solid var(--border)', borderRadius: 20,
     padding: '48px 44px', width: '100%', maxWidth: 400,
-    boxShadow: '0 8px 40px rgba(0,0,0,0.10)',
+    boxShadow: 'var(--shadow-lg)',
     display: 'flex', flexDirection: 'column', alignItems: 'center',
     textAlign: 'center',
   },
   logo: {
-    fontFamily: "'JetBrains Mono', monospace",
-    fontSize: 13, fontWeight: 700, letterSpacing: 5,
-    color: 'var(--accent)', marginBottom: 20, textTransform: 'uppercase' as const,
+    fontSize: 28, marginBottom: 32,
   },
   bar: {
-    width: 36, height: 3, background: '#F07C00',
+    width: 36, height: 3, background: 'var(--accent)',
     borderRadius: 99, marginBottom: 28,
   },
   banner: {
@@ -143,16 +144,16 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'rgba(34,197,94,0.07)',
     border: '1px solid rgba(34,197,94,0.22)',
     borderRadius: 10, marginBottom: 20,
-    fontSize: 13, fontWeight: 600,
+    fontSize: 13, fontWeight: 500,
     color: '#16A34A', lineHeight: 1.5,
   },
   title: {
-    fontSize: 24, fontWeight: 800, color: 'var(--text-primary)',
+    fontSize: 48, fontWeight: 400, color: 'var(--text-primary)',
     letterSpacing: '-0.5px', marginBottom: 4,
   },
   sub: {
-    fontSize: 12, color: 'var(--text-muted)', fontWeight: 600,
-    letterSpacing: '0.5px', marginBottom: 28,
+    fontSize: 15, color: 'var(--text-muted)', fontWeight: 400,
+    lineHeight: 1.5, marginBottom: 32, maxWidth: '36ch',
   },
   form: {
     width: '100%', display: 'flex', flexDirection: 'column' as const, gap: 12,
@@ -161,25 +162,24 @@ const styles: Record<string, React.CSSProperties> = {
     width: '100%', padding: '13px 16px',
     border: '1px solid var(--border-strong)',
     borderRadius: 12, fontSize: 14, fontWeight: 500,
-    fontFamily: "'Manrope', sans-serif",
+    fontFamily:'var(--sans)',
     outline: 'none', color: 'var(--text-primary)', background: 'var(--bg-input)',
   },
   btn: {
     width: '100%', height: 48,
-    background: '#F07C00', color: '#fff',
-    border: 'none', borderRadius: 12,
-    fontSize: 14, fontWeight: 700,
-    fontFamily: "'Manrope', sans-serif",
+    background: 'var(--accent)', color: '#fff',
+    border: 'none', borderRadius: 99,
+    fontSize: 14, fontWeight: 500,
+    fontFamily:'var(--sans)',
     cursor: 'pointer', marginTop: 4,
-    boxShadow: '0 4px 14px rgba(240,124,0,0.28)',
   },
   error: {
     fontSize: 13, color: '#DC2626',
-    fontWeight: 600, margin: '4px 0', textAlign: 'left' as const,
+    fontWeight: 500, margin: '4px 0', textAlign: 'left' as const,
   },
   forgot: {
     fontSize: 13, color: 'var(--text-muted)',
-    fontWeight: 600, textDecoration: 'none',
+    fontWeight: 500, textDecoration: 'none',
     marginTop: 20, transition: 'color 0.15s',
   },
 };

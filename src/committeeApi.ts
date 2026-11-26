@@ -225,6 +225,19 @@ export async function reorderBlocks(resolution_id: number, positions: { id: stri
 }
 
 // ── Soddy proxy ─────────────────────────────────────────────────────────────
+// ── Access codes (supabase/functions/access-codes) ─────────────────────────
+/** Chair/admin: give a delegate a fresh access code. Returns it formatted (XXXXX-XXXXX). */
+export async function resetAccessCode(userId: string): Promise<{ code: string; email: string }> {
+  const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/access-codes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: await authHeader(), apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+    body: JSON.stringify({ action: 'reset', user_id: userId }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Could not reset the code');
+  return data;
+}
+
 export async function callSoddy(messages: any[]) {
   const res = await fetch(SODDY_URL, {
     method: 'POST',

@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from './api';
 import { useAuth } from './AuthContext';
 import { DAYS, VENUE } from './Schedule';
+import DelegateAccess from './DelegateAccess';
 
 const ANNOUNCEMENTS_ROOM = '__announcements__';
 const START = new Date('2026-12-11T08:00:00+04:00');
@@ -133,6 +134,7 @@ export default function Dashboard() {
         </div>
 
         <div className="db-side">
+          {isChair && profile?.committee && <DelegateAccess committee={profile.committee} />}
           <div className="db-card">
             <div className="db-card__head">
               <h2>Announcements</h2>

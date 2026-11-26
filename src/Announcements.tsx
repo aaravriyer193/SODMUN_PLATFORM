@@ -21,7 +21,6 @@ import {
   createPoll, closePoll, deletePoll, getPolls, getPollVotes, castVote, removeVote, type PollOption,
   uploadAnnouncementPhoto,
 } from './committeeApi';
-import { pingCommittee } from './live';
 
 const ANNOUNCEMENTS_ROOM = '__announcements__';
 
@@ -624,7 +623,6 @@ export default function Announcements() {
       setDraft('');
       await loadAnnouncements();
       triggerImmediatePoll(); // nudge other users' polls to catch this faster
-      pingCommittee();
     } catch (e) {
       console.error('Failed to post announcement:', e);
     }

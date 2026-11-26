@@ -2,7 +2,6 @@
 // Replaces chairApi.ts going forward.
 
 import { supabase } from './api';
-import { liveEnabled } from './live';
 
 const FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/committee-api`;
 const SODDY_URL    = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/soddy-proxy`;
@@ -351,9 +350,7 @@ async function runPoll() {
   } catch (e) {
     console.error('Unified message poll failed:', e);
   } finally {
-    // With Liveblocks on, the committee room's pings (and reconnects) call
-    // triggerImmediatePoll — no timer. The timer only runs without a key.
-    if (isLeader && !liveEnabled) {
+    if (isLeader) {
       const nextDelay = consecutiveEmptyPolls >= EMPTY_POLLS_BEFORE_BACKOFF
         ? POLL_INTERVAL_SLOW_MS
         : POLL_INTERVAL_FAST_MS;

@@ -2,17 +2,14 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './AuthContext';
 import { supabase } from './api';
-import { subscribeToMessagePoll, triggerImmediatePoll } from './committeeApi';
-import { joinRoom, roomId, setCommitteeHandle } from './live';
+import { subscribeToMessagePoll } from './committeeApi';
 import Login from './Login';
-import Dashboard from './Dashboard';
 import Chat from './Chat';
-import Resolutions from './Resolutions';
+import ResolutionUploads from './ResolutionUploads';
+import Dashboard from './Dashboard';
+import Pois from './Pois';
 import Announcements from './Announcements';
-import SoddyBot from './SoddyBot';
 import Schedule from './Schedule';
-import SpeakersTimer from './SpeakersTimer';
-import CommitteeManager from './CommitteeManager';
 import SetPassword    from './auth-pages/SetPassword';
 import ForgotPassword from './auth-pages/ForgotPassword';
 import ResetPassword  from './auth-pages/ResetPassword';
@@ -33,14 +30,12 @@ interface Notification {
 }
 
 // ─── ICONS ────────────────────────────────────────────────────────────────────
-const IconDash    = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>;
 const IconMega    = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>;
 const IconChat    = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>;
 const IconDocs    = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>;
-const IconBot     = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8.01" y2="16"/><line x1="16" y1="16" x2="16.01" y2="16"/></svg>;
+const IconPoi     = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.6 8.6 0 0 1-3.8-.9L3 21l1.9-5.1a8.4 8.4 0 0 1-.9-3.8A8.5 8.5 0 0 1 12.5 3h.5a8.5 8.5 0 0 1 8 8z"/><path d="M9.5 9a2.5 2.5 0 0 1 4.9.8c0 1.7-2.4 2.2-2.4 3.4"/><line x1="12" y1="16.5" x2="12.01" y2="16.5"/></svg>;
+const IconHome    = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>;
 const IconCal     = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>;
-const IconCommittee = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
-const IconTimer   = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/><line x1="9" y1="2" x2="15" y2="2"/></svg>;
 const IconPlus    = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
 const IconLogout  = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>;
 const IconChevron = ({ dir = 'left' }: { dir?: 'left'|'right' }) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">{dir === 'left' ? <polyline points="15 18 9 12 15 6"/> : <polyline points="9 18 15 12 9 6"/>}</svg>;
@@ -224,11 +219,6 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   return user ? <>{children}</> : <Navigate to="/login" />;
 };
 
-const ChairRoute = ({ children, role, roleLoading }: { children: React.ReactNode; role: string|null; roleLoading: boolean }) => {
-  if (roleLoading) return <LoadingScreen label="Verifying clearance" />;
-  return role !== 'Delegate' && role !== null ? <>{children}</> : <Navigate to="/" />;
-};
-
 // ─── NEW BLOC MODAL ────────────────────────────────────────────────────────────
 const NewBlocModal = ({ onClose, profile, authUser }: { onClose: ()=>void; profile: any; authUser: any }) => {
   const [step, setStep]           = useState<'name'|'members'>('name');
@@ -313,7 +303,6 @@ const AppShell = () => {
   const { user, logout }          = useAuth();
   const [role, setRole]           = useState<string|null>(null);
   const [profile, setProfile]     = useState<any>(null);
-  const [roleLoading, setRL]      = useState(true);
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isMobile, setIsMobile]     = useState(window.innerWidth <= 768);
@@ -346,25 +335,27 @@ const AppShell = () => {
       supabase.from('users').select('*').eq('id', user.id).single().then(({ data }) => {
         setProfile(data); profileRef.current = data;
         setRole(data?.role || 'Delegate');
-        setRL(false);
       });
-    } else { setRole(null); setRL(false); }
+    } else { setRole(null); }
   }, [user]);
 
-  // ── Live committee room: instant "new message" pings (no-op without a key) ──
+  // ── POI badge: what needs this person's attention (chairs: reviews; delegates: answers) ──
+  const [poiCount, setPoiCount] = useState(0);
   useEffect(() => {
     if (!user || !profile?.committee) return;
-    const handle = joinRoom(
-      roomId.committee(profile.committee),
-      { userId: user.id, delegation: profile.delegation || profile.role || '', blockId: null, offset: null },
-      {
-        onPing: p => { if (p.type === 'message') triggerImmediatePoll(); },
-        onStatus: connected => { if (connected) triggerImmediatePoll(); }, // catch up after (re)connect
-      },
-    );
-    setCommitteeHandle(handle);
-    return () => { handle.leave(); };
-  }, [user?.id, profile?.committee]);
+    const chair = profile.role !== 'Delegate';
+    const count = async () => {
+      if (document.hidden) return;
+      const { data } = await supabase.rpc('poi_feed');
+      const rows: any[] = data || [];
+      setPoiCount(chair
+        ? rows.filter(p => p.question_status === 'pending' || p.answer_status === 'pending').length
+        : rows.filter(p => p.to_user === user.id && p.question_status === 'approved' && (!p.answer_status || p.answer_status === 'rejected')).length);
+    };
+    count();
+    const t = setInterval(count, 15000);
+    return () => clearInterval(t);
+  }, [user?.id, profile?.committee, profile?.role, location.pathname]);
 
   // ── Notification listener — shared poller, no WebSocket ──
   // Subscribes to the same unified cross-tab poller Chat.tsx uses. This was
@@ -572,12 +563,12 @@ const AppShell = () => {
 
           {/* Main nav */}
           <nav style={{ display:'flex', flexDirection:'column', gap:0 }}>
-            <NavItem to="/"            icon={<IconDash />} label="Dashboard"      collapsed={collapsed} />
-            <NavItem to="/announcements" icon={<IconMega />} label="Announcements"  collapsed={collapsed} />
-            <NavItem to="/chat"        icon={<IconChat />} label="Communications" collapsed={collapsed} badge={unreadCount} />
-            <NavItem to="/resolutions" icon={<IconDocs />} label="Resolutions"    collapsed={collapsed} />
-            <NavItem to="/soddy"       icon={<IconBot  />} label="Soddy AI"       collapsed={collapsed} />
-            <NavItem to="/schedule"    icon={<IconCal  />} label="Schedule"       collapsed={collapsed} />
+            <NavItem to="/"              icon={<IconHome />} label="Home"          collapsed={collapsed} />
+            <NavItem to="/chat"          icon={<IconChat />} label="Chat"          collapsed={collapsed} badge={unreadCount} />
+            <NavItem to="/announcements" icon={<IconMega />} label="Announcements" collapsed={collapsed} />
+            <NavItem to="/pois"          icon={<IconPoi />}  label="POIs"          collapsed={collapsed} badge={poiCount} />
+            <NavItem to="/resolutions"   icon={<IconDocs />} label="Resolutions"   collapsed={collapsed} />
+            <NavItem to="/schedule"      icon={<IconCal />}  label="Schedule"      collapsed={collapsed} />
           </nav>
 
           {/* New Bloc btn — delegates only */}
@@ -591,15 +582,6 @@ const AppShell = () => {
             </div>
           )}
 
-          {/* ── Chair section ── */}
-          {isChair && (
-            <div style={{ marginTop:16 }}>
-              {!collapsed && <p className="side-label side-label--green">Chair</p>}
-              {collapsed  && <div className="side-rule" style={{ margin:'4px 4px 8px' }} />}
-              <NavItem to="/timer"       icon={<IconTimer />}     label="Speakers Timer"  collapsed={collapsed} isChair />
-              <NavItem to="/committee"   icon={<IconCommittee />} label="Committee Mgr"  collapsed={collapsed} isChair />
-            </div>
-          )}
 
           <div style={{ flex:1 }} />
 
@@ -691,12 +673,12 @@ const AppShell = () => {
             </div>
             <p className="side-label">Platform</p>
             <nav style={{ display:'flex', flexDirection:'column', gap:0 }}>
-              <NavItem to="/"            icon={<IconDash />} label="Dashboard"      collapsed={false} />
-              <NavItem to="/announcements" icon={<IconMega />} label="Announcements"  collapsed={false} />
-              <NavItem to="/chat"        icon={<IconChat />} label="Communications" collapsed={false} badge={unreadCount} />
-              <NavItem to="/resolutions" icon={<IconDocs />} label="Resolutions"    collapsed={false} />
-              <NavItem to="/soddy"       icon={<IconBot  />} label="Soddy AI"       collapsed={false} />
-              <NavItem to="/schedule"    icon={<IconCal  />} label="Schedule"       collapsed={false} />
+              <NavItem to="/"              icon={<IconHome />} label="Home"          collapsed={false} />
+              <NavItem to="/chat"          icon={<IconChat />} label="Chat"          collapsed={false} badge={unreadCount} />
+              <NavItem to="/announcements" icon={<IconMega />} label="Announcements" collapsed={false} />
+              <NavItem to="/pois"          icon={<IconPoi />}  label="POIs"          collapsed={false} badge={poiCount} />
+              <NavItem to="/resolutions"   icon={<IconDocs />} label="Resolutions"   collapsed={false} />
+              <NavItem to="/schedule"      icon={<IconCal />}  label="Schedule"      collapsed={false} />
             </nav>
             {!isChair && (
               <div style={{ marginTop:16 }}>
@@ -704,13 +686,6 @@ const AppShell = () => {
                 <button className="new-bloc-btn" onClick={()=>{ setShowBloc(true); setMobileOpen(false); }}>
                   <IconPlus /> New Bloc Group Chat
                 </button>
-              </div>
-            )}
-            {isChair && (
-              <div style={{ marginTop:16 }}>
-                <p className="side-label side-label--green">Chair</p>
-                <NavItem to="/timer"     icon={<IconTimer />}     label="Speakers Timer" collapsed={false} isChair />
-              <NavItem to="/committee" icon={<IconCommittee />} label="Committee Mgr" collapsed={false} isChair />
               </div>
             )}
             <div style={{ flex:1 }} />
@@ -733,14 +708,13 @@ const AppShell = () => {
       <main style={{ flex:1, height:'100vh', overflowY:'auto', position:'relative', transition:'all 0.22s' }}>
         <Routes>
           <Route path="/login"        element={<Login />} />
-          <Route path="/"             element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-          <Route path="/chat"         element={<ProtectedRoute><Chat /></ProtectedRoute>} />
-          <Route path="/resolutions"  element={<ProtectedRoute><Resolutions /></ProtectedRoute>} />
-          <Route path="/soddy"        element={<ProtectedRoute><SoddyBot /></ProtectedRoute>} />
-          <Route path="/schedule"     element={<ProtectedRoute><Schedule /></ProtectedRoute>} />
+          <Route path="/"              element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+          <Route path="/chat"          element={<ProtectedRoute><Chat /></ProtectedRoute>} />
           <Route path="/announcements" element={<ProtectedRoute><Announcements /></ProtectedRoute>} />
-          <Route path="/timer"        element={<ProtectedRoute><ChairRoute role={role} roleLoading={roleLoading}><SpeakersTimer /></ChairRoute></ProtectedRoute>} />
-          <Route path="/committee"    element={<ProtectedRoute><ChairRoute role={role} roleLoading={roleLoading}><CommitteeManager /></ChairRoute></ProtectedRoute>} />
+          <Route path="/pois"          element={<ProtectedRoute><Pois /></ProtectedRoute>} />
+          <Route path="/resolutions"   element={<ProtectedRoute><ResolutionUploads /></ProtectedRoute>} />
+          <Route path="/schedule"      element={<ProtectedRoute><Schedule /></ProtectedRoute>} />
+          <Route path="*"              element={<Navigate to="/" replace />} />
         </Routes>
       </main>
 
@@ -748,10 +722,10 @@ const AppShell = () => {
       {user && isMobile && (
         <nav className="bottom-tab-bar">
           {[
-            { to:'/',            icon:<IconDash />,  label:'Home'  },
-            { to:'/chat',        icon:<IconChat />,  label:'Chat', badge:unreadCount },
-            { to:'/resolutions', icon:<IconDocs />,  label:'Docs'  },
-            { to:'/soddy',       icon:<IconBot />,   label:'Soddy' },
+            { to:'/',              icon:<IconHome />, label:'Home' },
+            { to:'/chat',          icon:<IconChat />, label:'Chat', badge:unreadCount },
+            { to:'/announcements', icon:<IconMega />, label:'News' },
+            { to:'/pois',          icon:<IconPoi />,  label:'POIs', badge:poiCount },
           ].map(tab => (
             <Link key={tab.to} to={tab.to} className={`tab-item ${location.pathname===tab.to?'active':''}`}>
               {tab.badge ? <span className="tab-badge">{tab.badge > 9 ? '9+' : tab.badge}</span> : null}

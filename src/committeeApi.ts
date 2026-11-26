@@ -4,7 +4,7 @@
 import { supabase } from './api';
 
 const FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/committee-api`;
-const SODDY_URL    = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/soddy-proxy`;
+const SODDY_URL    = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/soddy-proxy`; // supabase/functions/soddy-proxy
 
 // ── Auth header ────────────────────────────────────────────────────────────
 async function authHeader(): Promise<string> {
